@@ -1,6 +1,7 @@
 .env
 CLAUDE.md
 .claude/
+docs/plans/
 
 .venv/
 __pycache__/
