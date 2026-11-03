@@ -4,13 +4,13 @@ version = "0.1.0"
 description = "Airline customer support chatbot backend."
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "fastapi",
+    "fastapi>=0.162",
     "uvicorn",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx2",
+    "httpx2>=2.16",
     "pyright",
     "pytest",
     "ruff",
