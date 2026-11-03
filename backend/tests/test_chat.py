@@ -5,7 +5,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from champbot.chat import get_llm_provider
+from champbot.chat.answer.presentation.dependencies import get_llm_provider
 from champbot.common.llm.domain.provider import (
     LLMError,
     LLMRateLimitError,
