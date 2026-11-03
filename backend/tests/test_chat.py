@@ -6,8 +6,13 @@ import pytest
 from fastapi.testclient import TestClient
 
 from champbot.chat import get_llm_provider
-from champbot.gemini import GeminiProvider
-from champbot.llm import LLMError, LLMRateLimitError, LLMTimeoutError, LLMUnavailableError
+from champbot.common.llm.domain.provider import (
+    LLMError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+)
+from champbot.common.llm.infrastructure.gemini import GeminiProvider
 from champbot.main import create_app
 
 INTERNAL_DETAIL = "upstream said: secret internals"

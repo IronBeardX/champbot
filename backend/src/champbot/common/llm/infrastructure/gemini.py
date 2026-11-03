@@ -6,7 +6,11 @@ from typing import Any
 
 import httpx
 
-from champbot.llm import LLMRateLimitError, LLMTimeoutError, LLMUnavailableError
+from champbot.common.llm.domain.provider import (
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+)
 
 _GENERATE_CONTENT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"

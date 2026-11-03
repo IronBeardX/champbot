@@ -3,9 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 
-from champbot.config import load_settings
-from champbot.gemini import GeminiProvider
-from champbot.llm import LLMProvider
+from champbot.common.llm.domain.provider import LLMProvider
+from champbot.common.llm.infrastructure.gemini import GeminiProvider
+from champbot.common.llm.infrastructure.settings import load_gemini_settings
 
 MAX_MESSAGE_LENGTH = 2000
 
@@ -28,8 +28,8 @@ class ChatResponse(BaseModel):
 
 
 def get_llm_provider(request: Request) -> LLMProvider:
-    settings = load_settings(request.scope.get("env"))
-    return GeminiProvider(settings.gemini_api_key, settings.gemini_model)
+    settings = load_gemini_settings(request.scope.get("env"))
+    return GeminiProvider(settings.api_key, settings.model)
 
 
 @router.post("/chat")

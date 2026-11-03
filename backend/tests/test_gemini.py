@@ -6,8 +6,12 @@ from typing import Any
 import httpx
 import pytest
 
-from champbot.gemini import GeminiProvider
-from champbot.llm import LLMRateLimitError, LLMTimeoutError, LLMUnavailableError
+from champbot.common.llm.domain.provider import (
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+)
+from champbot.common.llm.infrastructure.gemini import GeminiProvider
 
 Handler = Callable[[httpx.Request], httpx.Response]
 

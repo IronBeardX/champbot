@@ -6,16 +6,16 @@ from champbot.common.core.infrastructure.settings import require_setting, settin
 
 
 @dataclass(frozen=True)
-class Settings:
-    gemini_api_key: str
-    gemini_model: str
+class GeminiSettings:
+    api_key: str
+    model: str
 
 
-def load_settings(
+def load_gemini_settings(
     workers_env: object | None = None, environ: Mapping[str, str] = os.environ
-) -> Settings:
+) -> GeminiSettings:
     lookup = settings_lookup(workers_env, environ)
-    return Settings(
-        gemini_api_key=require_setting(lookup, "GEMINI_API_KEY"),
-        gemini_model=require_setting(lookup, "GEMINI_MODEL"),
+    return GeminiSettings(
+        api_key=require_setting(lookup, "GEMINI_API_KEY"),
+        model=require_setting(lookup, "GEMINI_MODEL"),
     )

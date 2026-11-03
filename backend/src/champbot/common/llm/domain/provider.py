@@ -1,11 +1,13 @@
 from typing import Protocol
 
+from champbot.common.core.domain.exceptions import ChampBotError
+
 
 class LLMProvider(Protocol):
     async def generate(self, prompt: str) -> str: ...
 
 
-class LLMError(Exception):
+class LLMError(ChampBotError):
     pass
 
 
