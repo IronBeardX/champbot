@@ -17,6 +17,8 @@ cd backend
 uv sync
 ```
 
+Copy `.env.example` to `.env` at the repository root and fill in the values it lists.
+
 ## Run
 
 ```sh
