@@ -2,6 +2,8 @@
 
 Air India-style airline chatbot built for the AI Champions AI Engineer (Junior) technical exercise.
 
+Live at <https://champbot.alejandroyeroval.workers.dev>, deployed on Cloudflare Python Workers.
+
 ## Repository layout
 
 - `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project.
@@ -10,7 +12,10 @@ Air India-style airline chatbot built for the AI Champions AI Engineer (Junior) 
 
 ## Setup
 
-Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/). It installs the pinned Python version (3.13) by itself.
+Requirements:
+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.4 or newer. It installs the pinned Python version (3.13) by itself.
+- [Node.js](https://nodejs.org/), only to run on the Workers runtime or deploy. `pywrangler` calls `wrangler` through `npx`.
 
 ```sh
 cd backend
@@ -28,6 +33,36 @@ In a second terminal:
 
 ```sh
 curl localhost:8000/health
+```
+
+### On the Workers runtime
+
+Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter. Slower to start than uvicorn, so use it to check platform behavior, not for day-to-day development.
+
+```sh
+cd backend
+uv run pywrangler dev
+```
+
+In a second terminal:
+
+```sh
+curl localhost:8787/health
+```
+
+## Deploy
+
+Deploys are manual for now. Log in to Cloudflare once with `uv run pywrangler login`, then:
+
+```sh
+cd backend
+uv run pywrangler deploy
+```
+
+`pywrangler` vendors the runtime dependencies from `pyproject.toml` for Pyodide and uploads them with the Worker. Check the result with:
+
+```sh
+curl https://champbot.alejandroyeroval.workers.dev/health
 ```
 
 ## Checks
