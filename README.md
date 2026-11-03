@@ -14,7 +14,7 @@ Live at <https://champbot.alejandroyeroval.workers.dev>, deployed on Cloudflare 
 
 Requirements:
 
-- [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.4 or newer. It installs the pinned Python version (3.13) by itself.
+- [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.7 or newer, the version that wrote `backend/uv.lock`. uv installs the pinned Python version (3.13) by itself.
 - [Node.js](https://nodejs.org/), only to run on the Workers runtime or deploy. `pywrangler` calls `wrangler` through `npx`.
 
 ```sh
