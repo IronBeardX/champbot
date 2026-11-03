@@ -39,7 +39,6 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
-    { name = "uvicorn" },
 ]
 
 [package.dev-dependencies]
@@ -48,13 +47,11 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "uvicorn" },
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "fastapi" },
-    { name = "uvicorn" },
-]
+requires-dist = [{ name = "fastapi" }]
 
 [package.metadata.requires-dev]
 dev = [
@@ -62,6 +59,7 @@ dev = [
     { name = "pyright" },
     { name = "pytest" },
     { name = "ruff" },
+    { name = "uvicorn" },
 ]
 
 [[package]]
