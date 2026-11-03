@@ -1,16 +1,20 @@
 import logging
 from http import HTTPStatus
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from champbot.common.core.presentation.errors import error_response
-from champbot.common.llm.domain.provider import LLMRateLimitError, LLMTimeoutError
+from champbot.common.llm.domain.provider import LLMError, LLMRateLimitError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
 
-async def handle_llm_error(_: Request, error: Exception) -> JSONResponse:
+def register_llm_error_handlers(app: FastAPI) -> None:
+    app.add_exception_handler(LLMError, _handle_llm_error)
+
+
+async def _handle_llm_error(_: Request, error: Exception) -> JSONResponse:
     logger.warning("LLM request failed: %r", error)
     match error:
         case LLMTimeoutError():

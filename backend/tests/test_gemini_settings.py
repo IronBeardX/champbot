@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from champbot.common.core.infrastructure.settings import MissingSettingError
+from champbot.common.core.domain.exceptions import MissingSettingError
 from champbot.common.llm.infrastructure.settings import GeminiSettings, load_gemini_settings
 
 EXPECTED = GeminiSettings(api_key="test-key", model="test-model")

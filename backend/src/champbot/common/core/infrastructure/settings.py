@@ -1,15 +1,9 @@
 import os
 from collections.abc import Callable, Mapping
 
-from champbot.common.core.domain.exceptions import ChampBotError
+from champbot.common.core.domain.exceptions import MissingSettingError
 
 Lookup = Callable[[str], object | None]
-
-
-class MissingSettingError(ChampBotError):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"Missing required setting: {name}")
-        self.name = name
 
 
 def settings_lookup(
