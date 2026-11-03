@@ -31,7 +31,7 @@ Every meaningful technical decision, newest last. Each entry records the context
 - **Context**: the app must be deployed publicly for free.
 - **Decision**: Cloudflare Python Workers on the free plan.
 - **Alternatives**: Cloudflare Containers, rejected because they are paid only.
-- **Consequences**: Python Workers run on Pyodide (CPython compiled to WebAssembly), so every dependency must be pure Python or available for Pyodide, and the free plan's CPU limit per request applies. The Python version is pinned to 3.12; it must be revalidated against the Pyodide version the Workers runtime ships when the deployment is set up (IRO-159).
+- **Consequences**: Python Workers run on Pyodide (CPython compiled to WebAssembly), so every dependency must be pure Python or available for Pyodide, and the free plan's CPU limit per request applies. The Python version is pinned to 3.12; it must be revalidated against the Pyodide version the Workers runtime ships when the deployment is set up (IRO-159). Superseded by decision 10, which settles on Python 3.13.
 
 ## 5. Cloudflare Vectorize as vector database
 
@@ -69,3 +69,20 @@ Every meaningful technical decision, newest last. Each entry records the context
   - A single uv project at the root: mixes Python tooling with the frontend.
   - A uv workspace with `backend` as a member: only useful with several Python packages.
 - **Consequences**: backend commands run from `backend/`, and CI sets that as its working directory.
+
+## 10. Python Workers deployment: Python 3.13 and pywrangler
+
+- **Context**: decision 4 left the Python version to revalidate against the Workers runtime, and the app had to be packaged for Pyodide and deployed.
+- **Decision**:
+  - Python 3.13 locally, in CI and in the Worker. The runtime picks the Python version from the compatibility date: dates from 2026-09-08 run 3.14, earlier ones 3.13. `compatibility_date` is pinned to 2026-09-07 to stay on 3.13, preferred for its longer time in production on Workers.
+  - `pywrangler` (from `workers-py`) as a dev dependency. It vendors the runtime dependencies from `pyproject.toml` for Pyodide and proxies every other command to `wrangler`.
+  - The Workers entrypoint lives in `backend/src/worker.py`, outside the `champbot` package, and only wraps the FastAPI app with `workers.asgi.entrypoint`. The package never imports `workers`, which only exists inside the runtime.
+- **Alternatives**:
+  - Python 3.14, the runtime default for current dates: discarded in favor of the more established 3.13.
+  - Plain `wrangler` with hand-vendored packages: a second dependency list to keep in sync with `pyproject.toml`.
+  - The entrypoint inside the `champbot` package: mixes platform glue into application code.
+- **Consequences**:
+  - `pywrangler` requires uv 0.13.4 or newer, and Node.js for `npx wrangler`.
+  - Moving to Python 3.14 later means bumping the compatibility date and `requires-python` together.
+  - Measured on the first deploy of the `/health`-only app: 8.3 MiB uploaded (2.1 MiB gzipped), almost all of it vendored FastAPI and Pydantic. The first request after the deploy took about 6.5 s, and warm requests about 0.7 s end to end.
+  - **Free plan limits exceeded, risk accepted by the owner.** Wrangler reported a Worker startup time of 2395 ms against the documented 1 s limit, and the deploy was still accepted. The dashboard showed a CPU time per request of 11.67 ms median and 28.43 ms p99 against the 10 ms limit, while every request still returned 200. Cloudflare does not document how much it tolerates over these limits, so heavier endpoints or sustained traffic may start failing with error 1102 ("Worker exceeded resource limits"). The owner chose to keep building on Python Workers: the application code does not depend on the host, so a later move to another host keeps it. Watch for 1102 errors and for CPU time growing as endpoints are added.
