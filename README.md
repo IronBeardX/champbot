@@ -54,7 +54,16 @@ curl localhost:8787/health
 
 ## Deploy
 
-Deploys are manual for now. Log in to Cloudflare once with `uv run pywrangler login`, then:
+Every push to `main` deploys to <https://champbot.alejandroyeroval.workers.dev> automatically. The `deploy` job in CI runs after the checks pass. Deploys never overlap, and a newer push replaces a deploy still waiting to start. Each Cloudflare deployment is tagged with its commit SHA, so you can see which commit is live:
+
+```sh
+cd backend
+uv run pywrangler deployments list
+```
+
+The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`.
+
+To deploy by hand, log in to Cloudflare once with `uv run pywrangler login`, then:
 
 ```sh
 cd backend

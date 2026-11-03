@@ -86,3 +86,19 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Moving to Python 3.14 later means bumping the compatibility date and `requires-python` together.
   - Measured on the first deploy of the `/health`-only app: 8.3 MiB uploaded (2.1 MiB gzipped), almost all of it vendored FastAPI and Pydantic. The first request after the deploy took about 6.5 s, and warm requests about 0.7 s end to end.
   - **Free plan limits exceeded, risk accepted by the owner.** Wrangler reported a Worker startup time of 2395 ms against the documented 1 s limit, and the deploy was still accepted. The dashboard showed a CPU time per request of 11.67 ms median and 28.43 ms p99 against the 10 ms limit, while every request still returned 200. Cloudflare does not document how much it tolerates over these limits, so heavier endpoints or sustained traffic may start failing with error 1102 ("Worker exceeded resource limits"). The owner chose to keep building on Python Workers: the application code does not depend on the host, so a later move to another host keeps it. Watch for 1102 errors and for CPU time growing as endpoints are added.
+
+## 11. Continuous deployment from the CI workflow
+
+- **Context**: the public demo must always serve the code on `main`, without depending on someone deploying by hand.
+- **Decision**:
+  - A `deploy` job in `.github/workflows/ci.yml` runs `pywrangler deploy` after the `backend` checks pass, only on pushes to `main`.
+  - The job uses only the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets stay in Cloudflare and the workflow never sets them.
+  - Each deployment is tagged with the commit SHA (`--message`), and the job runs in the `production` GitHub environment, which links the live URL to each deployed commit.
+  - The job is in a concurrency group without cancellation, so deploys run one at a time.
+- **Alternatives**:
+  - A separate workflow triggered by `workflow_run`: it always runs from the default branch, has to check out the tested commit by hand and is not linked to the commit's checks.
+  - `cloudflare/wrangler-action`: it runs plain `wrangler`, which does not vendor the Python dependencies (see 10).
+  - Cloudflare Workers Builds: it cannot wait for the CI checks, and the pipeline would live outside the repository.
+- **Consequences**:
+  - A concurrency group keeps one running and one pending job. A newer push cancels a pending deploy, so a commit merged while another deploy is running can skip its own deploy, and its CI run shows as cancelled. Its code still goes live with the newer commit. Without the group, two deploys could overlap and an older one could finish last and leave stale code live.
+  - `pywrangler` runs `npx --yes wrangler`, so CI always uses the latest wrangler, the same as a manual deploy. Pinning it was left out of scope, so a breaking wrangler release would break deploys until it is pinned.
