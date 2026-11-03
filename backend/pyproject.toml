@@ -11,6 +11,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx2>=2.16",
+    "import-linter>=2.15",
     "pyright",
     "pytest",
     "python-dotenv>=1.2.4",
@@ -41,3 +42,51 @@ venv = ".venv"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["--import-mode=importlib"]
+
+[tool.importlinter]
+root_package = "champbot"
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Every module is layered"
+type = "layers"
+containers = ["champbot.*.*"]
+layers = ["(presentation)", "(application) | (infrastructure)", "(domain)"]
+
+[[tool.importlinter.contracts]]
+name = "Common does not depend on domains"
+type = "forbidden"
+source_modules = ["champbot.common"]
+forbidden_modules = ["champbot.chat"]
+
+[[tool.importlinter.contracts]]
+name = "Core does not depend on other common modules"
+type = "forbidden"
+source_modules = ["champbot.common.core"]
+forbidden_modules = ["champbot.common.llm"]
+
+[[tool.importlinter.contracts]]
+name = "FastAPI stays in presentation"
+type = "forbidden"
+source_modules = ["champbot.**.domain", "champbot.**.application", "champbot.**.infrastructure"]
+forbidden_modules = ["fastapi", "starlette"]
+
+[[tool.importlinter.contracts]]
+name = "httpx stays in infrastructure"
+type = "forbidden"
+source_modules = ["champbot.**.domain", "champbot.**.application", "champbot.**.presentation"]
+forbidden_modules = ["httpx"]
+ignore_imports = ["champbot.**.presentation.dependencies -> champbot.**.infrastructure.**"]
+
+[[tool.importlinter.contracts]]
+name = "Only presentation dependencies pick adapters"
+type = "forbidden"
+source_modules = ["champbot.**.domain", "champbot.**.application", "champbot.**.presentation"]
+forbidden_modules = ["champbot.**.infrastructure"]
+ignore_imports = ["champbot.**.presentation.dependencies -> champbot.**.infrastructure.**"]
+
+[[tool.importlinter.contracts]]
+name = "Domain and application never reach presentation"
+type = "forbidden"
+source_modules = ["champbot.**.domain", "champbot.**.application"]
+forbidden_modules = ["champbot.**.presentation"]
