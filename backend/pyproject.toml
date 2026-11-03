@@ -5,6 +5,7 @@ description = "Airline customer support chatbot backend."
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.162",
+    "httpx>=0.28",
 ]
 
 [dependency-groups]
@@ -12,6 +13,7 @@ dev = [
     "httpx2>=2.16",
     "pyright",
     "pytest",
+    "python-dotenv>=1.2.4",
     "ruff",
     "uvicorn",
     "workers-py",
