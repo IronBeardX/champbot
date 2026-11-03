@@ -51,14 +51,14 @@ Every meaningful technical decision, newest last. Each entry records the context
 
 - **Context**: the demo needs a simple chat UI that shows answers as they are generated.
 - **Decision**: plain HTML and JavaScript, served as static files by FastAPI, with answers streamed over Server-Sent Events.
-- **Alternatives**: a frontend framework, rejected because a single chat screen does not justify a build step and a second toolchain.
+- **Alternatives**: none seriously considered.
 - **Consequences**: one deployable unit. SSE is one-directional (server to client), which is all a chat answer stream needs.
 
 ## 8. Tooling: uv, ruff, pyright, pytest
 
 - **Context**: the project needs dependency management, linting, formatting, type checking and tests, all enforced in CI.
 - **Decision**: uv for Python and dependency management, ruff for lint and format, pyright in strict mode for types, pytest for tests.
-- **Alternatives**: mypy instead of pyright, rejected because pyright is faster and its strict mode catches more than mypy's defaults.
+- **Alternatives**: mypy instead of pyright, rejected because pyright is faster, and its strict mode, which this project enables, catches more issues than mypy's strict mode.
 - **Consequences**: `uv.lock` is committed and CI installs with `uv sync --locked`, so CI fails if the lockfile is out of date.
 
 ## 9. Monorepo with `backend/` and `frontend/`
