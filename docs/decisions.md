@@ -131,3 +131,28 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Mapping 429 to 503: rejected, because 429 with `Retry-After` tells the client exactly what to do.
   - try/except inside the endpoint: would be repeated in the streaming endpoint.
 - **Consequences**: a new provider only implements `generate` and maps its own failures to `LLMTimeoutError`, `LLMRateLimitError` and `LLMUnavailableError`. All three subclass `LLMError`, which the handler catches, and any other `LLMError` subclass falls back to 502. Locally, `uvicorn --env-file` needs `python-dotenv` (a dev dependency), and `pywrangler dev --env-file ../.env` reads the same file.
+
+## 14. Backend layout: layered modules, shared code moves up into `common`
+
+- **Context**: after the walking skeleton, `champbot/` was five flat modules, and two of them mixed responsibilities: `main.py` built the app and mapped exceptions to HTTP responses, and `chat.py` held the route and also created the concrete Gemini provider. Core adds RAG, prompts and streaming, so every issue needs to know where its code goes and which way dependencies point.
+- **Decision**:
+  - The package is a tree of modules. General modules live under `common/` (`core`, `llm`, later `embeddings` and `vector_store`). Domains (`chat`, later `knowledge`) have one folder per feature (`chat/answer`) and their own `common` for what features share.
+  - Every module is split into `presentation`, `application`, `infrastructure` and `domain`. `presentation` may import `application` and `domain`, and `infrastructure` only from `presentation/dependencies.py`. `application` and `infrastructure` may only import `domain`, and they never import each other. Across modules, a layer may also import the same layer of the `common` modules it may depend on, such as `require_setting` from `common/core/infrastructure`. A layer folder exists only once it has content.
+  - Siblings never import each other: domains, features, and general modules other than `core`. When two siblings need the same code, it moves up into the `common` beside them.
+  - Interfaces live in `domain` and adapters in `infrastructure`. The adapter is chosen in `presentation/dependencies.py` with FastAPI `Depends`, and `main.py` only assembles routers and error handlers.
+  - `common/core` holds the base classes other modules inherit from. Each one is added with its first subclass. This change adds `ChampBotError`, the settings lookup and the `error_response` helper.
+  - `import-linter` checks the rules in CI: a layers contract per module, forbidden contracts for the upward and sibling rules of `common`, forbidden contracts that keep `fastapi` in `presentation` and `httpx` in `infrastructure`, a forbidden contract that keeps adapter imports in `presentation/dependencies.py`, and a forbidden contract that keeps `domain` and `application` code from importing any `presentation` package.
+  - The static frontend will be served by Workers Static Assets, outside the Python package, so serving it costs no Worker CPU time.
+- **Alternatives**:
+  - Keep the flat package and document the rules: with RAG it would reach about 15 sibling modules, and rules that are only written down drift.
+  - Layers directly under `common` (`common/domain`, `common/infrastructure`): unrelated capabilities would share folders, and one settings module would know every provider.
+  - Domains calling each other through their application layer: rejected so that each domain can be read and changed alone.
+  - Creating every base class upfront (`BaseService`, `BaseEntity`, `ApiModel`): their shape would be guessed, with no subclass to test it against.
+  - A dependency injection library: FastAPI `Depends` already wires adapters and lets tests override them, and a new runtime dependency would also have to run on Pyodide.
+  - Enforcing the rules only in review: a contract fails CI on the first wrong import.
+- **Consequences**:
+  - Files sit up to four folders deep (`chat/answer/presentation/rest_api.py`). The depth pays off once `knowledge`, a second chat feature and the RAG modules exist.
+  - The layers and adapter-wiring contracts use wildcards (`champbot.*.*`, `champbot.**.presentation`), so new modules and files are checked without editing them. The two `common` contracts name their forbidden targets, because a wildcard would also match the source module, so a new domain or general module is added to them by hand. Sibling independence (domains, features, general modules) is not checked yet, because each level has a single sibling and an `independence` contract over one module checks nothing. The change that adds the second sibling adds that contract. `docs/architecture.md` says so.
+  - Every contract also checks indirect imports. The `httpx` and adapter-wiring contracts ignore the imports from `presentation/dependencies.py` into `infrastructure` modules, which removes the only legitimate route from `presentation` to an adapter and to `httpx`.
+  - Errors live in `domain`, even when infrastructure raises them (`MissingSettingError`), so that `presentation` can map them without importing `infrastructure`. Each module registers its own error handlers through a `register_*_error_handlers(app)` function next to them.
+  - Nested packages work on Workers unchanged: `pywrangler dev` served `/health` and `/chat` from the new layout.

@@ -7,7 +7,8 @@ Live at <https://champbot.alejandroyeroval.workers.dev>, deployed on Cloudflare 
 ## Repository layout
 
 - `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project.
-- `frontend/`: will hold the static chat UI served by the backend.
+- `frontend/`: will hold the static chat UI, served by Workers Static Assets.
+- `docs/architecture.md`: backend module layout and dependency rules.
 - `docs/decisions.md`: technical decisions and the reasons behind them.
 
 ## Setup
@@ -105,5 +106,6 @@ cd backend
 uv run ruff format --check .
 uv run ruff check .
 uv run pyright
+uv run lint-imports
 uv run pytest
 ```
