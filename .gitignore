@@ -7,3 +7,8 @@ docs/plans/
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+
+.venv-workers/
+python_modules/
+pylock.toml
+.wrangler/

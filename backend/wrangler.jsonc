@@ -1,0 +1,7 @@
+{
+  "name": "champbot",
+  "main": "src/worker.py",
+  // Dates from 2026-09-08 switch the runtime to Python 3.14; the project stays on 3.13.
+  "compatibility_date": "2026-09-07",
+  "compatibility_flags": ["python_workers"]
+}

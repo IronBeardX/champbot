@@ -14,6 +14,8 @@ dev = [
     "pytest",
     "ruff",
     "uvicorn",
+    "workers-py",
+    "workers-runtime-sdk",
 ]
 
 [build-system]
