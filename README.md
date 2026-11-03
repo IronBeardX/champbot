@@ -28,14 +28,25 @@ Copy `.env.example` to `.env` at the repository root; it lists every required va
 
 ```sh
 cd backend
-uv run uvicorn champbot.main:app --reload
+uv run uvicorn champbot.main:app --reload --env-file ../.env
 ```
 
 In a second terminal:
 
 ```sh
 curl localhost:8000/health
+curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
 ```
+
+`POST /chat` sends a single message (1 to 2000 characters) to the LLM and returns `{"answer": "..."}`. Errors:
+
+| Status | When | Body |
+|---|---|---|
+| 422 | The message is missing, blank or longer than 2000 characters | FastAPI's list of validation errors in `detail` |
+| 429 | Gemini rate-limits the request. `Retry-After` is set when Gemini gives a delay, capped at one hour | Fixed message in `detail` |
+| 502 | Gemini fails or returns no usable answer | Fixed message in `detail` |
+| 504 | Gemini does not answer within 25 seconds | Fixed message in `detail` |
+| 500 | Configuration error: `GEMINI_API_KEY` or `GEMINI_MODEL` is missing; the server log names the variable. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
 
 ### On the Workers runtime
 
@@ -43,13 +54,14 @@ Runs the app the way it runs in production: on Pyodide, through the Workers ASGI
 
 ```sh
 cd backend
-uv run pywrangler dev
+uv run pywrangler dev --env-file ../.env
 ```
 
 In a second terminal:
 
 ```sh
 curl localhost:8787/health
+curl localhost:8787/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
 ```
 
 ## Deploy
@@ -61,7 +73,14 @@ cd backend
 uv run pywrangler deployments list
 ```
 
-The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`.
+The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`. The Worker needs one:
+
+```sh
+cd backend
+uv run pywrangler secret put GEMINI_API_KEY
+```
+
+The model id is a plain variable in `backend/wrangler.jsonc`, deployed with the code.
 
 To deploy by hand, log in to Cloudflare once with `uv run pywrangler login`, then:
 
@@ -74,6 +93,7 @@ uv run pywrangler deploy
 
 ```sh
 curl https://champbot.alejandroyeroval.workers.dev/health
+curl https://champbot.alejandroyeroval.workers.dev/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
 ```
 
 ## Checks
