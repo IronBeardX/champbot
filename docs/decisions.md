@@ -102,3 +102,32 @@ Every meaningful technical decision, newest last. Each entry records the context
 - **Consequences**:
   - A concurrency group keeps one running and one pending job. A newer push cancels a pending deploy, so a commit merged while another deploy is running can skip its own deploy, and its CI run shows as cancelled. Its code still goes live with the newer commit. Without the group, two deploys could overlap and an older one could finish last and leave stale code live.
   - `pywrangler` runs `npx --yes wrangler`, so CI always uses the latest wrangler, the same as a manual deploy. Pinning it was left out of scope, so a breaking wrangler release would break deploys until it is pinned.
+
+## 12. Gemini through its REST API over httpx
+
+- **Context**: decision 3 put Gemini behind a provider interface. The Google Gen AI SDK (`google-genai`) is the official client, but every runtime dependency must work on Pyodide (decision 4), and the issue asked to validate it there with the REST API as fallback.
+- **Decision**: `GeminiProvider` calls the `generateContent` REST endpoint directly with an async `httpx` client, a 25 s deadline for the whole request and the key in the `x-goog-api-key` header.
+- **Alternatives**: the Google Gen AI SDK. Rejected because it cannot be installed for the Worker: `google-genai` 2.34.0 requires `pydantic>=2.12.5`, while the Pyodide bundle only has wheels for `pydantic` 2.10.6 (`pydantic-core` 2.27.2), so `pywrangler` fails to resolve the dependencies. It would also add `google-auth`, `requests`, `websockets` and `tenacity` to a bundle that already exceeds the startup limit.
+- **Consequences**:
+  - The provider maps HTTP failures to the interface errors itself: timeout, 429 with the delay from `RetryInfo.retryDelay` (rounded up and capped at one hour), any other error or a response without text.
+  - Gemini thinking models return their reasoning as extra parts flagged with `thought`, which the provider skips.
+  - httpx timeouts apply to each phase of a request, so the provider also wraps the request in `asyncio.timeout` to bound it as a whole. Checked on `pywrangler dev`: httpx works on Pyodide, both timeouts are honored, and a network failure such as an unknown host surfaces as `httpx.ConnectError`, which maps to 502 like any other transport error. `httpx` adds about 0.3 MiB to the upload (8.6 MiB, 2.2 MiB gzipped). The Worker startup time with `httpx` was not measured.
+  - Provider errors carry only Gemini's codes: `finishReason` and `blockReason` for a response without an answer, and the HTTP code plus `error.status` for an error response. Each code is checked against an upper-case code pattern before it is logged. Neither model output nor error bodies, which can quote the user's message, reach the logs. Transport failures are logged through the httpx exception repr, which holds the exception type and message but not request headers or bodies. The guarantee depends on that staying true.
+  - The application runs on `pydantic` 2.14 locally and 2.10 on Workers, so the code must stay within what 2.10 supports.
+  - Observed latency is high: 3 to 22 s for a one-sentence answer from `gemini-3.6-flash`. On the test day `gemini-3.8-flash`, the newest Flash, answered 503 ("high demand") or did not answer within 25 s on every request, locally and in production, so the default model is `gemini-3.6-flash`. Moving to a newer model is a change to `GEMINI_MODEL` only.
+  - Availability is uneven on the free tier: in one production session, 3 of 6 requests to `gemini-3.6-flash` hit the 25 s timeout and others got 503. All of them mapped to 504 and 502 as designed.
+  - CPU time per request in production, read from the `cpuTime` field of `wrangler tail` on 2026-11-03: `/chat` 25 to 207 ms over 8 requests, median about 104 ms; `/health` 30 to 113 ms over 6 requests, median about 48 ms. Every request is far above the 10 ms Free plan limit, and Cloudflare still reported `outcome: ok`, the same tolerance seen in decision 10. A burst of 12 `/health` requests showed the split: requests served by an already-warm isolate took 10 to 19 ms, and requests that landed on a new isolate took 40 to 140 ms, so most of the earlier samples were cold starts spread over several colos. `/chat` never went below about 72 ms. Waiting for Gemini adds wall time, not CPU time, so the extra cost is in the request handling itself. One candidate is the `httpx.AsyncClient` built for every request: creating it costs about 25 ms of CPU the first time and 3 ms afterwards on native CPython, and more on Pyodide. This endpoint increases the error 1102 risk accepted in decision 10. IRO-164 follows up on reducing it and on measuring the startup time.
+
+## 13. Runtime configuration and the `/chat` error contract
+
+- **Context**: `/chat` needs the Gemini key and model id both under uvicorn and on Workers, and it must report LLM failures without leaking internals.
+- **Decision**:
+  - One loader builds `Settings` from the Workers `env` binding (`request.scope["env"]`) when present, and from `os.environ` otherwise. A missing value raises an error that names the variable, never its value. That name only goes to the log, and `/chat` answers a generic JSON 500 with the same `{"detail": ...}` shape as every other error.
+  - The model id is configuration (`GEMINI_MODEL`): `.env` locally, `vars` in `wrangler.jsonc` in production. The key is a Worker secret in production.
+  - The provider raises provider-agnostic errors, and one app-level exception handler maps them: timeout → 504, rate limit → 429 with `Retry-After` when the delay is known, any other provider failure → 502. Bodies carry a fixed message, and the cause is only logged.
+  - Messages must be 1 to 2000 characters and not blank, to protect the free-tier quota.
+- **Alternatives**:
+  - `pydantic-settings`: an extra dependency that cannot read the Workers `env` object.
+  - Mapping 429 to 503: rejected, because 429 with `Retry-After` tells the client exactly what to do.
+  - try/except inside the endpoint: would be repeated in the streaming endpoint.
+- **Consequences**: a new provider only implements `generate` and maps its own failures to `LLMTimeoutError`, `LLMRateLimitError` and `LLMUnavailableError`. All three subclass `LLMError`, which the handler catches, and any other `LLMError` subclass falls back to 502. Locally, `uvicorn --env-file` needs `python-dotenv` (a dev dependency), and `pywrangler dev --env-file ../.env` reads the same file.
