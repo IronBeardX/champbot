@@ -1,0 +1,2 @@
+class ChampBotError(Exception):
+    pass

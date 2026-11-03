@@ -2,7 +2,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from champbot.config import MissingSettingError, Settings, load_settings
+from champbot.common.core.infrastructure.settings import MissingSettingError
+from champbot.config import Settings, load_settings
 
 EXPECTED = Settings(gemini_api_key="test-key", gemini_model="test-model")
 

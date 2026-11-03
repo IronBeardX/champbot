@@ -1,14 +1,8 @@
 import os
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 
-Lookup = Callable[[str], object | None]
-
-
-class MissingSettingError(Exception):
-    def __init__(self, name: str) -> None:
-        super().__init__(f"Missing required setting: {name}")
-        self.name = name
+from champbot.common.core.infrastructure.settings import require_setting, settings_lookup
 
 
 @dataclass(frozen=True)
@@ -20,20 +14,8 @@ class Settings:
 def load_settings(
     workers_env: object | None = None, environ: Mapping[str, str] = os.environ
 ) -> Settings:
-    # On Workers, vars and secrets only reach Python through the env binding, not os.environ.
-    lookup: Lookup = environ.get if workers_env is None else _attribute_lookup(workers_env)
+    lookup = settings_lookup(workers_env, environ)
     return Settings(
-        gemini_api_key=_require_setting(lookup, "GEMINI_API_KEY"),
-        gemini_model=_require_setting(lookup, "GEMINI_MODEL"),
+        gemini_api_key=require_setting(lookup, "GEMINI_API_KEY"),
+        gemini_model=require_setting(lookup, "GEMINI_MODEL"),
     )
-
-
-def _attribute_lookup(workers_env: object) -> Lookup:
-    return lambda name: getattr(workers_env, name, None)
-
-
-def _require_setting(lookup: Lookup, name: str) -> str:
-    value = lookup(name)
-    if not value:
-        raise MissingSettingError(name)
-    return str(value)
