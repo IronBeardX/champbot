@@ -10,7 +10,7 @@ Air India-style airline chatbot built for the AI Champions AI Engineer (Junior) 
 
 ## Setup
 
-Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/). It installs the pinned Python version (3.12) by itself.
+Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/). It installs the pinned Python version (3.13) by itself.
 
 ```sh
 cd backend
