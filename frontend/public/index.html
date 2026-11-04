@@ -5,8 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ChampBot</title>
     <link rel="icon" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <h1>ChampBot</h1>
+    <main>
+      <h1>ChampBot</h1>
+      <form id="chat-form">
+        <label for="message">Your question</label>
+        <textarea id="message" name="message" required maxlength="2000" rows="4"></textarea>
+        <button id="send" type="submit">Send</button>
+      </form>
+      <section id="answer" aria-live="polite"></section>
+    </main>
+    <footer>Unofficial demo, not affiliated with Air India.</footer>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
