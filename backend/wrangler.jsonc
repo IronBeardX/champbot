@@ -6,5 +6,8 @@
   "compatibility_flags": ["python_workers"],
   "vars": {
     "GEMINI_MODEL": "gemini-3.6-flash"
+  },
+  "assets": {
+    "directory": "../frontend/public"
   }
 }
