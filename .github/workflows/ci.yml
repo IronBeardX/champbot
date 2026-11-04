@@ -80,6 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write
     concurrency:
       group: preview-${{ github.event.pull_request.number }}
       cancel-in-progress: true
@@ -122,3 +123,22 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Comment preview URL
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          marker='<!-- champbot-preview -->'
+          body="$marker
+          **Preview:** https://${PREVIEW_ALIAS}-champbot.alejandroyeroval.workers.dev
+
+          Built from [\`${HEAD_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$HEAD_SHA)."
+          comment_ids=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
+          comment_id=$(head -n 1 <<< "$comment_ids")
+          if [[ -n "$comment_id" ]]; then
+            gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -f body="$body"
+          else
+            gh api --silent "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$body"
+          fi
