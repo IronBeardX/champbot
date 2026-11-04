@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import httpx
@@ -16,15 +16,17 @@ from champbot.common.llm.infrastructure.gemini import GeminiProvider
 
 Handler = Callable[[httpx.Request], httpx.Response]
 
+HELLO_CONVERSATION = (Message(Role.USER, "Hello"),)
+GREETING_EXCHANGE = (Message(Role.USER, "Hello"), Message(Role.ASSISTANT, "Hi, how can I help?"))
+
 
 def generate(
     handler: Handler,
-    messages: list[Message] | None = None,
+    messages: Sequence[Message] = HELLO_CONVERSATION,
     system_instruction: str | None = None,
 ) -> str:
     provider = GeminiProvider("test-key", "test-model", transport=httpx.MockTransport(handler))
-    conversation = messages if messages is not None else [Message(Role.USER, "Hello")]
-    return asyncio.run(provider.generate(conversation, system_instruction))
+    return asyncio.run(provider.generate(list(messages), system_instruction))
 
 
 def answer_with_parts(*parts: dict[str, Any]) -> Handler:
@@ -57,24 +59,88 @@ def raise_error(error: Exception) -> Handler:
     return handler
 
 
-def test_sends_user_message_to_configured_model_with_key_in_header() -> None:
+def capture_request(
+    messages: Sequence[Message], system_instruction: str | None = None
+) -> httpx.Request:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         return answer_with_parts({"text": "Hi"})(request)
 
-    generate(handler, [Message(Role.USER, "Can I change my flight?")])
-
+    generate(handler, messages, system_instruction)
     [request] = requests
+    return request
+
+
+def capture_request_body(
+    messages: Sequence[Message], system_instruction: str | None = None
+) -> dict[str, Any]:
+    return json.loads(capture_request(messages, system_instruction).content)
+
+
+def test_sends_user_message_to_configured_model_with_key_in_header() -> None:
+    request = capture_request([Message(Role.USER, "Can I change my flight?")])
+
     assert request.method == "POST"
     assert str(request.url) == (
         "https://generativelanguage.googleapis.com/v1beta/models/test-model:generateContent"
     )
     assert request.headers["x-goog-api-key"] == "test-key"
-    assert json.loads(request.content)["contents"] == [
-        {"role": "user", "parts": [{"text": "Can I change my flight?"}]}
-    ]
+    assert json.loads(request.content) == {
+        "contents": [{"role": "user", "parts": [{"text": "Can I change my flight?"}]}]
+    }
+
+
+def test_sends_conversation_in_order_mapping_each_role_regardless_of_position() -> None:
+    body = capture_request_body(
+        [
+            Message(Role.ASSISTANT, "Hi, how can I help?"),
+            Message(Role.USER, "Can I change my flight?"),
+            Message(Role.ASSISTANT, "Yes, you can."),
+            Message(Role.ASSISTANT, "Which booking is it?"),
+        ]
+    )
+
+    assert body == {
+        "contents": [
+            {"role": "model", "parts": [{"text": "Hi, how can I help?"}]},
+            {"role": "user", "parts": [{"text": "Can I change my flight?"}]},
+            {"role": "model", "parts": [{"text": "Yes, you can."}]},
+            {"role": "model", "parts": [{"text": "Which booking is it?"}]},
+        ]
+    }
+
+
+@pytest.mark.parametrize(
+    "system_instruction",
+    [
+        pytest.param("You are an airline assistant.", id="plain"),
+        pytest.param("  You are an airline assistant.\n", id="surrounding-whitespace"),
+    ],
+)
+def test_sends_system_instruction_verbatim_when_given(system_instruction: str) -> None:
+    body = capture_request_body(GREETING_EXCHANGE, system_instruction)
+
+    assert body == {
+        "contents": [
+            {"role": "user", "parts": [{"text": "Hello"}]},
+            {"role": "model", "parts": [{"text": "Hi, how can I help?"}]},
+        ],
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+    }
+
+
+@pytest.mark.parametrize("system_instruction", [None, "", " \n\t "])
+def test_omits_system_instruction_when_absent_or_blank(system_instruction: str | None) -> None:
+    body = capture_request_body(GREETING_EXCHANGE, system_instruction)
+
+    assert body == {
+        "contents": [
+            {"role": "user", "parts": [{"text": "Hello"}]},
+            {"role": "model", "parts": [{"text": "Hi, how can I help?"}]},
+        ]
+    }
 
 
 def test_joins_text_parts_and_skips_thoughts() -> None:
@@ -197,7 +263,7 @@ def test_whole_request_is_bounded_by_the_timeout() -> None:
     )
 
     with pytest.raises(LLMTimeoutError):
-        asyncio.run(provider.generate([Message(Role.USER, "Hello")]))
+        asyncio.run(provider.generate(list(HELLO_CONVERSATION)))
 
 
 @pytest.mark.parametrize(
