@@ -1,0 +1,47 @@
+export const NETWORK_ERROR_MESSAGE =
+  "Could not reach the server. Check your connection and try again.";
+
+const UNEXPECTED_RESPONSE_MESSAGE = "Unexpected response from the server.";
+
+const FIXED_STATUS_MESSAGES = {
+  422: "Message must be 1-2000 characters and not blank.",
+  502: "The assistant is unavailable right now. Try again shortly.",
+  504: "The assistant took too long to answer. Try again.",
+  500: "Something went wrong on the server. Try again later.",
+};
+
+function rateLimitMessage(response) {
+  const retryAfter = response.headers.get("Retry-After");
+  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
+  if (retryAfter !== null && retryAfter.trim() !== "" && Number.isFinite(seconds)) {
+    return `Too many requests. Try again in ${seconds} s.`;
+  }
+  return "Too many requests. Try again shortly.";
+}
+
+async function readAnswer(response) {
+  let body;
+  try {
+    body = await response.json();
+  } catch {
+    return { error: UNEXPECTED_RESPONSE_MESSAGE };
+  }
+  if (typeof body?.answer === "string") {
+    return { answer: body.answer };
+  }
+  return { error: UNEXPECTED_RESPONSE_MESSAGE };
+}
+
+export async function readReply(response) {
+  if (response.status === 200) {
+    return readAnswer(response);
+  }
+  if (response.status === 429) {
+    return { error: rateLimitMessage(response) };
+  }
+  const message = FIXED_STATUS_MESSAGES[response.status];
+  if (message !== undefined) {
+    return { error: message };
+  }
+  return { error: UNEXPECTED_RESPONSE_MESSAGE };
+}
