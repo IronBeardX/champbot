@@ -49,6 +49,7 @@ champbot/
 │   │       └── rest_api.py        # GET /health
 │   └── llm/
 │       ├── domain/
+│       │   ├── message.py         # Role and Message value objects of a conversation
 │       │   └── provider.py        # LLMProvider interface and the LLMError hierarchy
 │       ├── infrastructure/
 │       │   ├── gemini.py          # GeminiProvider over the Gemini REST API
