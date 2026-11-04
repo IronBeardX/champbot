@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from champbot.chat.answer.presentation.dependencies import get_llm_provider
+from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMError,
     LLMRateLimitError,
@@ -23,10 +24,10 @@ class FakeProvider:
     def __init__(self, answer: str = "", error: LLMError | None = None) -> None:
         self.answer = answer
         self.error = error
-        self.prompts: list[str] = []
+        self.calls: list[tuple[list[Message], str | None]] = []
 
-    async def generate(self, prompt: str) -> str:
-        self.prompts.append(prompt)
+    async def generate(self, messages: list[Message], system_instruction: str | None = None) -> str:
+        self.calls.append((messages, system_instruction))
         if self.error is not None:
             raise self.error
         return self.answer
@@ -66,7 +67,7 @@ def test_returns_provider_answer_for_the_message() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"answer": "Yes, you can change it online."}
-    assert provider.prompts == ["  Can I change my flight?"]
+    assert provider.calls == [([Message(Role.USER, "  Can I change my flight?")], None)]
 
 
 @pytest.mark.parametrize(
@@ -86,7 +87,7 @@ def test_invalid_message_is_rejected_before_reaching_provider(body: dict[str, An
 
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], list)
-    assert provider.prompts == []
+    assert provider.calls == []
 
 
 def test_malformed_json_body_is_rejected_before_reaching_provider() -> None:
@@ -98,7 +99,7 @@ def test_malformed_json_body_is_rejected_before_reaching_provider() -> None:
 
     assert response.status_code == 422
     assert isinstance(response.json()["detail"], list)
-    assert provider.prompts == []
+    assert provider.calls == []
 
 
 def test_message_at_max_length_is_accepted() -> None:
@@ -107,7 +108,7 @@ def test_message_at_max_length_is_accepted() -> None:
     response = client_with(provider).post("/chat", json={"message": "a" * 2000})
 
     assert response.status_code == 200
-    assert provider.prompts == ["a" * 2000]
+    assert provider.calls == [([Message(Role.USER, "a" * 2000)], None)]
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 
 from champbot.chat.answer.presentation.dependencies import get_llm_provider
 from champbot.chat.answer.presentation.serializers import ChatRequest, ChatResponse
+from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import LLMProvider
 
 router = APIRouter()
@@ -13,4 +14,4 @@ router = APIRouter()
 async def chat(
     body: ChatRequest, provider: Annotated[LLMProvider, Depends(get_llm_provider)]
 ) -> ChatResponse:
-    return ChatResponse(answer=await provider.generate(body.message))
+    return ChatResponse(answer=await provider.generate([Message(Role.USER, body.message)]))

@@ -6,6 +6,7 @@ from typing import Any
 
 import httpx
 
+from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMRateLimitError,
     LLMTimeoutError,
@@ -35,8 +36,10 @@ class GeminiProvider:
         self._transport = transport
         self._timeout_seconds = timeout_seconds
 
-    async def generate(self, prompt: str) -> str:
-        response = await self._post_generate_content(prompt)
+    async def generate(self, messages: list[Message], system_instruction: str | None = None) -> str:
+        response = await self._post_generate_content(
+            _build_request_body(messages, system_instruction)
+        )
         if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
             raise LLMRateLimitError(_parse_retry_delay_seconds(response))
         if response.is_error:
@@ -45,7 +48,7 @@ class GeminiProvider:
             )
         return _extract_answer(response)
 
-    async def _post_generate_content(self, prompt: str) -> httpx.Response:
+    async def _post_generate_content(self, body: dict[str, Any]) -> httpx.Response:
         # httpx timeouts apply to each phase; asyncio.timeout bounds the whole request.
         try:
             async with (
@@ -57,12 +60,32 @@ class GeminiProvider:
                 return await client.post(
                     _GENERATE_CONTENT_URL.format(model=self._model),
                     headers={"x-goog-api-key": self._api_key},
-                    json={"contents": [{"role": "user", "parts": [{"text": prompt}]}]},
+                    json=body,
                 )
         except (TimeoutError, httpx.TimeoutException) as error:
             raise LLMTimeoutError("Gemini did not answer in time") from error
         except (httpx.HTTPError, httpx.InvalidURL) as error:
             raise LLMUnavailableError(f"Could not reach Gemini: {error!r}") from error
+
+
+def _build_request_body(messages: list[Message], system_instruction: str | None) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "contents": [
+            {"role": _gemini_role(message.role), "parts": [{"text": message.text}]}
+            for message in messages
+        ]
+    }
+    if system_instruction is not None and system_instruction.strip():
+        body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    return body
+
+
+def _gemini_role(role: Role) -> str:
+    match role:
+        case Role.USER:
+            return "user"
+        case Role.ASSISTANT:
+            return "model"
 
 
 def _extract_answer(response: httpx.Response) -> str:

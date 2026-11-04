@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
+from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMRateLimitError,
     LLMTimeoutError,
@@ -16,9 +17,14 @@ from champbot.common.llm.infrastructure.gemini import GeminiProvider
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
-def generate(handler: Handler, prompt: str = "Hello") -> str:
+def generate(
+    handler: Handler,
+    messages: list[Message] | None = None,
+    system_instruction: str | None = None,
+) -> str:
     provider = GeminiProvider("test-key", "test-model", transport=httpx.MockTransport(handler))
-    return asyncio.run(provider.generate(prompt))
+    conversation = messages if messages is not None else [Message(Role.USER, "Hello")]
+    return asyncio.run(provider.generate(conversation, system_instruction))
 
 
 def answer_with_parts(*parts: dict[str, Any]) -> Handler:
@@ -51,14 +57,14 @@ def raise_error(error: Exception) -> Handler:
     return handler
 
 
-def test_sends_prompt_to_configured_model_with_key_in_header() -> None:
+def test_sends_user_message_to_configured_model_with_key_in_header() -> None:
     requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         requests.append(request)
         return answer_with_parts({"text": "Hi"})(request)
 
-    generate(handler, prompt="Can I change my flight?")
+    generate(handler, [Message(Role.USER, "Can I change my flight?")])
 
     [request] = requests
     assert request.method == "POST"
@@ -191,7 +197,7 @@ def test_whole_request_is_bounded_by_the_timeout() -> None:
     )
 
     with pytest.raises(LLMTimeoutError):
-        asyncio.run(provider.generate("Hello"))
+        asyncio.run(provider.generate([Message(Role.USER, "Hello")]))
 
 
 @pytest.mark.parametrize(
