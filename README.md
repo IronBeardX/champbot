@@ -2,12 +2,12 @@
 
 Air India-style airline chatbot built for the AI Champions AI Engineer (Junior) technical exercise.
 
-Live at <https://champbot.alejandroyeroval.workers.dev>, deployed on Cloudflare Python Workers.
+Open <https://champbot.alejandroyeroval.workers.dev> in a browser for the chat UI, deployed on Cloudflare Python Workers.
 
 ## Repository layout
 
 - `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project.
-- `frontend/`: will hold the static chat UI, served by Workers Static Assets.
+- `frontend/`: the static chat UI, served by Workers Static Assets from `frontend/public`.
 - `docs/architecture.md`: backend module layout and dependency rules.
 - `docs/decisions.md`: technical decisions and the reasons behind them.
 
@@ -16,7 +16,7 @@ Live at <https://champbot.alejandroyeroval.workers.dev>, deployed on Cloudflare 
 Requirements:
 
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) 0.13.7 or newer, the version that wrote `backend/uv.lock`. uv installs the pinned Python version (3.13) by itself.
-- [Node.js](https://nodejs.org/), only to run on the Workers runtime or deploy. `pywrangler` calls `wrangler` through `npx`.
+- [Node.js](https://nodejs.org/), to run the frontend tests and to run on the Workers runtime or deploy. `pywrangler` calls `wrangler` through `npx`.
 
 ```sh
 cd backend
@@ -32,7 +32,7 @@ cd backend
 uv run uvicorn champbot.main:app --reload --env-file ../.env
 ```
 
-In a second terminal:
+uvicorn only serves the JSON API; it does not serve the frontend. In a second terminal:
 
 ```sh
 curl localhost:8000/health
@@ -51,14 +51,14 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "Ca
 
 ### On the Workers runtime
 
-Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter. Slower to start than uvicorn, so use it to check platform behavior, not for day-to-day development.
+Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter, with Workers Static Assets serving the frontend. This is the full local stack, including the chat UI; it is slower to start than uvicorn, so use it to check platform behavior, not for day-to-day backend development.
 
 ```sh
 cd backend
 uv run pywrangler dev --env-file ../.env
 ```
 
-In a second terminal:
+Open <http://localhost:8787> for the chat UI. In a second terminal:
 
 ```sh
 curl localhost:8787/health
@@ -114,4 +114,9 @@ uv run ruff check .
 uv run pyright
 uv run lint-imports
 uv run pytest
+```
+
+```sh
+cd frontend
+npm test
 ```

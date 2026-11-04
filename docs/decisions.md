@@ -47,12 +47,14 @@ Every meaningful technical decision, newest last. Each entry records the context
 - **Alternatives**: Voyage, rejected because its rate limits without a payment method are too low.
 - **Consequences**: `bge-m3` is multilingual, so queries and documents do not need to share a language. Embedding calls consume the Workers AI daily neuron quota.
 
-## 7. Plain HTML + JS frontend with SSE streaming
+## 7. Plain HTML + JS frontend, served by Workers Static Assets
 
-- **Context**: the demo needs a simple chat UI that shows answers as they are generated.
-- **Decision**: plain HTML and JavaScript, served as static files by FastAPI, with answers streamed over Server-Sent Events.
-- **Alternatives**: none seriously considered.
-- **Consequences**: one deployable unit. SSE is one-directional (server to client), which is all a chat answer stream needs.
+- **Context**: the demo needs a simple chat UI. The initial version streamed answers over SSE, served as static files by FastAPI.
+- **Decision**: plain HTML and JavaScript, served from the same origin by Workers Static Assets (`backend/wrangler.jsonc`'s `assets.directory` points at `frontend/public`), not by FastAPI. Requests that match a static file are served without reaching the Worker; everything else, including unknown paths, falls through to it. Answers are rendered with `textContent` only, never `innerHTML`. The status-to-message mapping (`frontend/public/reply.js`) is unit tested with Node's built-in `node:test`, with no dependencies. A single turn is the whole interaction: the UI sends one message and renders one answer, with no streaming.
+- **Alternatives**:
+  - FastAPI serving the static files: every page load would cost Worker CPU time, which is scarce on the free plan (decision 10).
+  - SSE streaming: deferred to the Bonus scope. It adds a second endpoint and a client-side event parser for a demo whose answers are short.
+- **Consequences**: one deployable unit, same origin, so no CORS. The frontend has its own lightweight check in CI (`frontend` job, `node --test`) instead of pulling in a browser-testing dependency. The DOM glue in `app.js` and the wrangler config have no unit tests of their own; they are checked by hand on `pywrangler dev` and on the pull request preview.
 
 ## 8. Tooling: uv, ruff, pyright, pytest
 
