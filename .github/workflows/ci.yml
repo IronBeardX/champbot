@@ -73,3 +73,52 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  preview:
+    needs: backend
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'iro-')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: preview-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    env:
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Resolve preview alias
+        working-directory: .
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ ! "$HEAD_REF" =~ ^(iro-[0-9]+)- ]]; then
+            echo "::error::Branch '$HEAD_REF' does not start with iro-<n>-"
+            exit 1
+          fi
+          echo "PREVIEW_ALIAS=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      - name: Upload preview
+        run: uv run pywrangler versions upload --preview-alias "$PREVIEW_ALIAS" --message "$HEAD_SHA"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
