@@ -97,6 +97,12 @@ curl https://champbot.alejandroyeroval.workers.dev/health
 curl https://champbot.alejandroyeroval.workers.dev/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
 ```
 
+### Preview deployments
+
+Every pull request from an `iro-<n>-...` branch gets a preview of its code at `https://iro-<n>-champbot.alejandroyeroval.workers.dev`. The `preview` job in CI uploads the branch head as a new Worker version once the checks pass, without deploying it, so production keeps serving `main`. The job keeps one comment on the pull request with the preview URL and the commit it was built from, and updates it on every push. Branches without the `iro-<n>-` prefix get no preview, and the job shows as skipped.
+
+Previews use the production secrets, so `/chat` on a preview spends the same Gemini quota. They are public, like the production URL. `wrangler tail` and Workers Logs do not see their requests.
+
 ## Checks
 
 The same checks run in CI on every pull request and on pushes to `main`.

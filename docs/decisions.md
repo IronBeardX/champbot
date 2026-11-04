@@ -156,3 +156,24 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Every contract also checks indirect imports. The `httpx` and adapter-wiring contracts ignore the imports from `presentation/dependencies.py` into `infrastructure` modules, which removes the only legitimate route from `presentation` to an adapter and to `httpx`.
   - Errors live in `domain`, even when infrastructure raises them (`MissingSettingError`), so that `presentation` can map them without importing `infrastructure`. Each module registers its own error handlers through a `register_*_error_handlers(app)` function next to them.
   - Nested packages work on Workers unchanged: `pywrangler dev` served `/health` and `/chat` from the new layout.
+
+## 15. Pull request previews from the CI workflow
+
+- **Context**: changes, and soon UI changes, should be checked on a real URL before they reach `main`, without touching the production deployment.
+- **Decision**:
+  - A `preview` job in `.github/workflows/ci.yml` runs `pywrangler versions upload --preview-alias iro-<n>` after the `backend` checks pass, only on pull requests from `iro-<n>-...` branches. A version upload creates a Worker version without deploying it, so production traffic never moves.
+  - The alias is `iro-<n>`, taken from the branch name. Full Linear branch names exceed the 63-character DNS label limit of `<alias>-<worker>`.
+  - The job checks out the pull request head commit, not GitHub's merge commit, so the preview is the commit shown in the pull request. The same SHA tags the version (`--message`) and appears in the comment.
+  - The job keeps a single pull request comment with the URL, found through a hidden marker and edited with `gh` on every push. Only this job gets `pull-requests: write`.
+  - A concurrency group per pull request cancels the upload of an older push. The group cancels whichever run is already in it, not the older one, so on its own an older push whose checks finish late could replace a newer preview.
+  - Right before uploading, the job checks that its commit is still the pull request head, and skips the upload and the comment if it is not. A push that lands between the check and the upload is still covered, because its own preview cancels the running one or uploads after it. If the newer push fails its `backend` checks, its preview never runs and the older one stays live, which is harmless because the comment still names the commit that was built.
+- **Alternatives**:
+  - Cloudflare Workers Builds previews: they cannot wait for the CI checks, the pipeline would live outside the repository, and plain `wrangler` does not vendor the Python dependencies (see 10 and 11).
+  - A separate frontend Worker or Pages project: it would preview only the UI against the production backend, and add a second deploy target.
+  - A Worker per pull request: fully isolated, but each one needs its own secrets and a cleanup job.
+  - A marketplace action for the sticky comment: a third-party action with write access to pull requests, for what `gh` does in a few lines.
+- **Consequences**:
+  - Preview versions inherit the Worker's secrets, so preview `/chat` requests spend the production Gemini quota. Previews are public, like the production URL.
+  - `wrangler tail` and Workers Logs do not see requests to preview URLs, so checks that need logs wait until after the merge.
+  - Pull requests from forks get no secrets and their preview job fails. The repository has a single contributor, so they are not supported.
+  - Cloudflare keeps the latest 1000 aliases, so old previews expire without a cleanup job.
