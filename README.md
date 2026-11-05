@@ -11,6 +11,7 @@ Open <https://champbot.alejandroyeroval.workers.dev> in a browser for the chat U
 - `frontend/`: the static chat UI, served by Workers Static Assets from `frontend/public`.
 - `docs/architecture.md`: backend module layout and dependency rules.
 - `docs/decisions.md`: technical decisions and the reasons behind them.
+- `docs/merging.md`: how a PR gets onto `main` (rebase + fast-forward, no squash or merge commits) and why.
 
 ## Setup
 
