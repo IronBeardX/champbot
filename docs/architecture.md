@@ -57,11 +57,11 @@ champbot/
 │       └── presentation/
 │           └── errors.py          # LLMError → 504, 429 or 502, register_llm_error_handlers
 └── chat/
-    └── answer/                    # feature: single-turn POST /chat
+    └── answer/                    # feature: POST /chat, multi-turn with client-sent history
         └── presentation/
             ├── dependencies.py    # get_llm_provider: builds the Gemini adapter from settings
             ├── rest_api.py        # POST /chat
-            └── serializers.py     # ChatRequest, ChatResponse
+            └── serializers.py     # ChatRequest (message + history), ChatResponse
 ```
 
 ## Base classes
@@ -88,7 +88,6 @@ champbot/
 | Embeddings | `common/embeddings`: `Embedder` in `domain`, the Workers AI adapter in `infrastructure` |
 | Vector database | `common/vector_store`: `VectorStore` and `Chunk` in `domain`, the Vectorize adapter in `infrastructure` |
 | Document ingestion | `knowledge/ingest/`, the first feature of a `knowledge` domain, run by a script outside the request path |
-| Conversation state | Decided by its own Core issue. Its models belong to the `chat` domain |
 | Static frontend | Workers Static Assets, configured in `wrangler.jsonc`. Not part of the Python package |
 
 ## Enforcement

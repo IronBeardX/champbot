@@ -37,13 +37,17 @@ uvicorn only serves the JSON API; it does not serve the frontend. In a second te
 ```sh
 curl localhost:8000/health
 curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
+curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "And to Lisbon?", "history": [{"role": "user", "text": "Can I change my flight to Porto?"}, {"role": "assistant", "text": "Yes, you can change it online."}]}'
 ```
 
-`POST /chat` sends a single message (1 to 2000 characters) to the LLM and returns `{"answer": "..."}`. Errors:
+`POST /chat` sends `message` (1 to 2000 characters, not blank) plus an optional `history` of earlier turns, and returns `{"answer": "..."}`. The Worker keeps no state: it answers from exactly what the request sends, so the client must resend the whole conversation on every turn.
+
+`history` is a list of `{"role": "user" | "assistant", "text": "..."}` items, defaulting to `[]`. It alternates roles starting with `user` and ending with `assistant`, since `message` is always the final user turn. `user` texts follow the same 1-2000 character rule as `message`; `assistant` texts must not be blank and are at most 8000 characters each, because answers (for example retrieved or appended by the server) can be longer than a user message. `history` holds at most 20 items and 40 000 characters in total. The client is responsible for trimming the oldest user/assistant pair once it nears these limits. Errors:
 
 | Status | When | Body |
 |---|---|---|
-| 422 | The message is missing, blank or longer than 2000 characters | FastAPI's list of validation errors in `detail` |
+| 422 | `message` is missing, blank or longer than 2000 characters, or a `history` item has a missing/unknown role, or a blank/too-long text (2000 for `user`, 8000 for `assistant`) | FastAPI's list of validation errors in `detail` |
+| 422 | `history` does not alternate `user`/`assistant` starting with `user`, does not end with an `assistant` turn, or has more than 20 items or more than 40 000 characters in total | FastAPI's list of validation errors in `detail` |
 | 429 | Gemini rate-limits the request. `Retry-After` is set when Gemini gives a delay, capped at one hour | Fixed message in `detail` |
 | 502 | Gemini fails or returns no usable answer | Fixed message in `detail` |
 | 504 | Gemini does not answer within 25 seconds | Fixed message in `detail` |

@@ -179,3 +179,24 @@ Every meaningful technical decision, newest last. Each entry records the context
   - `wrangler tail` and Workers Logs do not see requests to preview URLs, so checks that need logs wait until after the merge.
   - Pull requests from forks get no secrets and their preview job fails. The repository has a single contributor, so they are not supported.
   - Cloudflare keeps the latest 1000 aliases, so old previews expire without a cleanup job.
+
+## 16. Multi-turn `/chat` with client-sent history
+
+- **Context**: `/chat` answered each message alone, so a follow-up question lost the earlier turns. The Worker should stay stateless: no KV, D1 or session storage, and no extra bindings, cost or data retention for a demo bot.
+- **Decision**:
+  - The request body is `{message, history?}`. `history` is a list of `{role: "user" | "assistant", text}` items and defaults to `[]`, so single-turn requests keep working. The server maps `history` and then `message`, in order, to `list[Message]` and passes it to the existing `LLMProvider.generate`. Neither the provider nor the Gemini adapter changes.
+  - `history` alternates roles, starting with `user` and ending with `assistant`: item *i* is `user` for even *i* and `assistant` for odd *i*, and its length is even. `message` is always the final user turn, so the model always receives a conversation that ends with the user.
+  - User texts (`message` and `user` items) keep the limits of decision 13: 1 to 2000 characters, not blank. Assistant texts must not be blank and are at most 8000 characters. They are not held to 2000, because RAG answers and server-appended flight results can be longer, and a 2000 cap would make the next turn fail.
+  - `history` holds at most 20 items and at most 40 000 characters in total across user and assistant texts, to bound the input tokens each request spends from the free-tier quota.
+  - Any violation is a 422 before the provider is called. The server never truncates or reorders history. The client trims the oldest user/assistant pairs itself.
+  - Validation lives in the `chat/answer` presentation serializers: a discriminated union on `role` for per-item limits, and a `history` field validator for alternation, parity and the total size. No `application` or `domain` layer is added, because the change only maps the request to the existing `Message` value object.
+- **Alternatives**:
+  - Server-side sessions in KV or D1 keyed by a conversation id: they contradict the stateless Worker and add bindings, expiry and privacy handling.
+  - Silently truncating oversized history: the model would see a different conversation than the client believes it sent.
+  - Capping assistant texts at 2000 like user texts: it would reject valid follow-ups to long answers.
+  - A single global size cap with no per-item assistant limit: one huge assistant item could use the whole budget, and the per-item cap documents the expected answer size.
+- **Consequences**:
+  - Every turn resends the whole conversation, so input tokens grow with each turn until the client hits the limits. 40 000 characters is roughly 10 000 tokens per request at most.
+  - The client controls the history, including assistant turns, and can fabricate them. That is harmless while the user is the only party, but anything the server must trust later (for example flight results it appended) cannot be taken back from `history` without being re-derived or verified on the server.
+  - The frontend has to keep the conversation and send it. Until it does, it stays single-turn and still works, because `history` defaults to `[]`.
+  - Changing a limit only touches the constants in `chat/answer/presentation/serializers.py`, the README and this entry.
