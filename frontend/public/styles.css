@@ -29,14 +29,49 @@ textarea {
 }
 
 button {
-  align-self: flex-end;
   padding: 0.5rem 1.5rem;
   font: inherit;
 }
 
-#answer {
+.actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+#conversation {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.turn {
   white-space: pre-wrap;
-  min-height: 2rem;
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: #eee;
+}
+
+.turn.user {
+  align-self: flex-end;
+  background: #dbe7f5;
+}
+
+.turn.pending {
+  color: #666;
+}
+
+.turn.error {
+  background: #fde2e2;
+  color: #7a1f1f;
+}
+
+.turn.user.failed {
+  background: #fbeaea;
 }
 
 footer {

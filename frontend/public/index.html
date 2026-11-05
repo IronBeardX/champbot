@@ -10,12 +10,20 @@
   <body>
     <main>
       <h1>ChampBot</h1>
+      <ol id="conversation" aria-live="polite">
+        <li class="turn assistant greeting">
+          Hello! I'm ChampBot, an unofficial assistant for Air India travellers. Ask me about
+          flights, baggage, check-in or bookings.
+        </li>
+      </ol>
       <form id="chat-form">
         <label for="message">Your question</label>
         <textarea id="message" name="message" required maxlength="2000" rows="4"></textarea>
-        <button id="send" type="submit">Send</button>
+        <div class="actions">
+          <button id="new-conversation" type="button">New conversation</button>
+          <button id="send" type="submit">Send</button>
+        </div>
       </form>
-      <section id="answer" aria-live="polite"></section>
     </main>
     <footer>Unofficial demo, not affiliated with Air India.</footer>
     <script type="module" src="app.js"></script>
