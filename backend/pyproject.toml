@@ -71,12 +71,22 @@ modules = ["champbot.chat", "champbot.knowledge"]
 name = "Core does not depend on other common modules"
 type = "forbidden"
 source_modules = ["champbot.common.core"]
-forbidden_modules = ["champbot.common.llm", "champbot.common.flights"]
+forbidden_modules = [
+    "champbot.common.llm",
+    "champbot.common.flights",
+    "champbot.common.embeddings",
+    "champbot.common.vector_store",
+]
 
 [[tool.importlinter.contracts]]
 name = "General modules are independent"
 type = "independence"
-modules = ["champbot.common.llm", "champbot.common.flights"]
+modules = [
+    "champbot.common.llm",
+    "champbot.common.flights",
+    "champbot.common.embeddings",
+    "champbot.common.vector_store",
+]
 
 [[tool.importlinter.contracts]]
 name = "Chat common does not depend on chat features"
