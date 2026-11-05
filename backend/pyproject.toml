@@ -60,7 +60,12 @@ layers = ["(presentation)", "(application) | (infrastructure)", "(domain)"]
 name = "Common does not depend on domains"
 type = "forbidden"
 source_modules = ["champbot.common"]
-forbidden_modules = ["champbot.chat"]
+forbidden_modules = ["champbot.chat", "champbot.knowledge"]
+
+[[tool.importlinter.contracts]]
+name = "Domains are independent"
+type = "independence"
+modules = ["champbot.chat", "champbot.knowledge"]
 
 [[tool.importlinter.contracts]]
 name = "Core does not depend on other common modules"
