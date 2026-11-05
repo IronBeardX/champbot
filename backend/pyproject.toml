@@ -8,6 +8,9 @@ dependencies = [
     "httpx>=0.28",
 ]
 
+[project.scripts]
+champbot-ingest = "champbot.knowledge.ingest.presentation.cli:main"
+
 [dependency-groups]
 dev = [
     "httpx2>=2.16",
