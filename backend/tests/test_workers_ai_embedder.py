@@ -12,11 +12,26 @@ from champbot.common.embeddings.infrastructure.workers_ai import WorkersAIEmbedd
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
-# Shape from Cloudflare's public Workers AI docs for @cf/baai/bge-m3's `text` mode;
-# not yet pinned from a live call (see the PR body for why).
+# Shape pinned from a live @cf/baai/bge-m3 call on 2026-11-05 (two short texts).
+# meta/response/pooling are real fields we don't read; kept so the fixture matches
+# the live envelope exactly, not just the parts our code touches.
 def _response_for(vectors: list[list[float]]) -> dict[str, Any]:
     return {
-        "result": {"shape": [len(vectors), len(vectors[0]) if vectors else 0], "data": vectors},
+        "result": {
+            "shape": [len(vectors), len(vectors[0]) if vectors else 0],
+            "data": vectors,
+            "meta": {
+                "cost_metric_name_1": "input_tokens",
+                "cost_metric_value_1": len(vectors),
+                "cost_metric_name_2": None,
+                "cost_metric_value_2": None,
+                "cost_metric_name_3": None,
+                "cost_metric_value_3": None,
+                "neurons": 0.010745879,
+            },
+            "response": None,
+            "pooling": "cls",
+        },
         "success": True,
         "errors": [],
         "messages": [],

@@ -11,10 +11,15 @@ from champbot.common.vector_store.infrastructure.vectorize import VectorizeStore
 Handler = Callable[[httpx.Request], httpx.Response]
 
 
-# Shape from Cloudflare's public Vectorize v2 docs for the async upsert endpoint;
-# not yet pinned from a live call (see the PR body for why).
+# Shape pinned from a live Vectorize v2 upsert call on 2026-11-05 (one throwaway vector).
 def _response_for(mutation_id: str) -> dict[str, Any]:
-    return {"result": {"mutationId": mutation_id}, "success": True, "errors": [], "messages": []}
+    return {
+        "result": {"mutationId": mutation_id},
+        "result_info": None,
+        "success": True,
+        "errors": [],
+        "messages": [],
+    }
 
 
 def make_chunk(suffix: int) -> Chunk:
