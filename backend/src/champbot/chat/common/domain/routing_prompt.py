@@ -12,6 +12,5 @@ Markdown: no "**", "#", or bullet characters. Numbered steps may be written as p
 List in source_ids only the numbers of the excerpts the answer actually relies on, in any
 order. Leave it empty when none were used. Never invent a number that is not in the excerpts.
 
-There is no flight search yet. For "flight_search", acknowledge the request, ask for whatever
-is still missing (departure city, destination, or dates), and never state a flight number,
-time, price, or availability."""
+Set flight_query only for "flight_search", following the flight search instructions below.
+For every other intent, set flight_query to null."""
