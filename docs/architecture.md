@@ -10,7 +10,7 @@ The package is a tree of modules, and every module is split into the same four l
 
 | Level | Siblings | Their shared code |
 |---|---|---|
-| Top | Domains: `chat`, later `knowledge` | `common/`, made of general modules |
+| Top | Domains: `chat`, `knowledge` | `common/`, made of general modules |
 | Inside `common` | General modules: `llm`, later `embeddings`, `vector_store` | `common/core` |
 | Inside a domain | Features: `chat/answer`, later `chat/stream` | `<domain>/common` |
 
@@ -22,7 +22,7 @@ Each module has up to four layers. A layer folder exists only once it has conten
 
 | Layer | Holds | May import |
 |---|---|---|
-| `presentation` | Routes (`rest_api.py`), request and response models (`serializers.py`), FastAPI dependencies that pick concrete adapters (`dependencies.py`), error-to-status mapping and its registration (`errors.py`) | `application` and `domain`. `infrastructure` only from `dependencies.py` |
+| `presentation` | Routes (`rest_api.py`), request and response models (`serializers.py`), FastAPI dependencies that pick concrete adapters (`dependencies.py`), error-to-status mapping and its registration (`errors.py`), CLI entry points (`cli.py`) run outside the request path | `application` and `domain`. `infrastructure` only from `dependencies.py` |
 | `application` | Use cases (`services.py`) that orchestrate domain objects through their interfaces | `domain` |
 | `infrastructure` | Adapters that implement domain interfaces against external services, and settings loading | `domain` |
 | `domain` | Interfaces (`Protocol`s), models and errors | no other layer, and no third-party I/O library (`httpx`, `fastapi`, cloud clients) |
@@ -56,16 +56,25 @@ champbot/
 │       │   └── settings.py        # GeminiSettings, load_gemini_settings
 │       └── presentation/
 │           └── errors.py          # LLMError → 504, 429 or 502, register_llm_error_handlers
-└── chat/
-    ├── common/
-    │   └── domain/
-    │       └── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
-    └── answer/                    # feature: POST /chat, multi-turn with client-sent history
+├── chat/
+│   ├── common/
+│   │   └── domain/
+│   │       └── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
+│   └── answer/                    # feature: POST /chat, multi-turn with client-sent history
+│       └── presentation/
+│           ├── dependencies.py    # get_llm_provider builds the Gemini adapter, get_system_instruction gives the prompt
+│           ├── rest_api.py        # POST /chat, sends the system instruction with the conversation
+│           └── serializers.py     # ChatRequest (message + history), ChatResponse
+└── knowledge/
+    └── ingest/                    # feature: policy corpus chunking, run by the champbot-ingest CLI
+        ├── domain/
+        │   ├── document.py        # PolicyDocument, parse_policy_document, InvalidPolicyDocumentError
+        │   └── chunker.py         # estimate_tokens, DocumentChunk, chunk_document
         └── presentation/
-            ├── dependencies.py    # get_llm_provider builds the Gemini adapter, get_system_instruction gives the prompt
-            ├── rest_api.py        # POST /chat, sends the system instruction with the conversation
-            └── serializers.py     # ChatRequest (message + history), ChatResponse
+            └── cli.py             # champbot-ingest --dry-run
 ```
+
+The policy corpus itself lives in `backend/data/policies/` and the eval seed in `backend/data/eval/`, both outside `src/` (decision 17: non-`.py` files under `src/` aren't readable on Workers at runtime, and this data is only ever needed locally, never by the deployed Worker).
 
 ## Base classes
 
@@ -73,7 +82,7 @@ champbot/
 
 | Base or helper | Location | Status |
 |---|---|---|
-| `ChampBotError` | `common/core/domain/exceptions.py` | In use: `LLMError`, `MissingSettingError` |
+| `ChampBotError` | `common/core/domain/exceptions.py` | In use: `LLMError`, `MissingSettingError`, `InvalidPolicyDocumentError` |
 | `error_response()` | `common/core/presentation/errors.py` | In use: every error handler |
 | `settings_lookup()`, `require_setting()` | `common/core/infrastructure/settings.py` | In use: `load_gemini_settings` |
 | `BaseService` | `common/core/application/services.py` | Added with the first use case that orchestrates several steps |
@@ -90,7 +99,7 @@ champbot/
 | Prompts (versioned files) | `chat/common/domain/`, one module per prompt that holds only its text as a constant. Python Workers do not make non-`.py` files under `src/` readable at runtime (decision 17) |
 | Embeddings | `common/embeddings`: `Embedder` in `domain`, the Workers AI adapter in `infrastructure` |
 | Vector database | `common/vector_store`: `VectorStore` and `Chunk` in `domain`, the Vectorize adapter in `infrastructure` |
-| Document ingestion | `knowledge/ingest/`, the first feature of a `knowledge` domain, run by a script outside the request path |
+| Document ingestion | `knowledge/ingest/`: the chunker and the `champbot-ingest --dry-run` CLI exist (IRO-178). Embedding and the Vectorize upsert land in IRO-180, wired from a new `knowledge/ingest/presentation/dependencies.py` |
 | Static frontend | Workers Static Assets, configured in `wrangler.jsonc`. Not part of the Python package |
 
 ## Enforcement
@@ -98,10 +107,11 @@ champbot/
 `uv run lint-imports` checks these rules with [import-linter](https://import-linter.readthedocs.io/), and CI runs it next to the tests. The contracts live in `backend/pyproject.toml`:
 
 - **Every module is layered**: the layer order inside every module two levels below `champbot` (`champbot.*.*`: `common/core`, `common/llm`, `chat/common`, `chat/answer`, and any new one).
-- **Common does not depend on domains** and **Core does not depend on other common modules**: the upward and sibling rules for `common`. Their forbidden targets are named one by one (`champbot.chat`, `champbot.common.llm`), because a wildcard would also match the source module itself.
+- **Common does not depend on domains** and **Core does not depend on other common modules**: the upward and sibling rules for `common`. Their forbidden targets are named one by one (`champbot.chat`, `champbot.knowledge`, `champbot.common.llm`), because a wildcard would also match the source module itself.
+- **Domains are independent**: `champbot.chat` and `champbot.knowledge` never import each other, in either direction. It is the sibling-independence contract for the domain level, added now that there are two domains (see the last paragraph below).
 - **Chat common does not depend on chat features**: `chat/common` never imports a `chat` feature, so shared chat code only flows down into features. Its forbidden targets are named one by one (`champbot.chat.answer`) for the same reason.
 - **FastAPI stays in presentation** and **httpx stays in infrastructure**: where third-party packages may be imported. Both check indirect imports too. The `httpx` contract lets `presentation/dependencies.py` reach `httpx` through the adapters it wires, with the same `ignore_imports` as the adapter-wiring contract below.
 - **Only presentation dependencies pick adapters**: outside `presentation/dependencies.py`, no `domain`, `application` or `presentation` code imports an `infrastructure` module, directly or indirectly, in its own module or in another one. `main.py` and `infrastructure` code are exempt, so an adapter may build on `common/core/infrastructure`. The contract covers every presentation file and lets only `dependencies.py` through with `ignore_imports`. That pattern matches modules inside an `infrastructure` package, so `dependencies.py` imports from a module such as `infrastructure.gemini`, never from the `infrastructure` package itself.
 - **Domain and application never reach presentation**: no `domain` or `application` code imports any `presentation` package, in its own module or in another one. Together with the adapter-wiring contract, this closes the indirect route from a use case to an adapter through another module's `dependencies.py`, which the layers contract cannot see because it works inside one module.
 
-The layers, third-party and adapter-wiring contracts use wildcards, so new modules and files are covered without editing them. The `common` contracts are not: a new domain is added to the forbidden targets of **Common does not depend on domains**, a new general module to those of **Core does not depend on other common modules**, and a new chat feature to those of **Chat common does not depend on chat features**. Sibling independence has nothing to check while each level has a single sibling (one domain, one feature, one general module besides `core`). The change that adds the second one adds an `independence` contract for that level, for example `["champbot.chat", "champbot.knowledge"]`. Likewise, the change that creates another domain's `<domain>/common` adds a forbidden contract like the `chat/common` one, which keeps it from importing that domain's features.
+The layers, third-party and adapter-wiring contracts use wildcards, so new modules and files are covered without editing them. The `common` contracts are not: a new domain is added to the forbidden targets of **Common does not depend on domains**, a new general module to those of **Core does not depend on other common modules**, and a new chat feature to those of **Chat common does not depend on chat features**. Sibling independence has nothing to check while a level has a single sibling: the domain level had only `chat` until `knowledge` arrived, which is why **Domains are independent** is only added now, as an `independence` contract listing every domain (`["champbot.chat", "champbot.knowledge"]`). The feature level (inside a domain) and the general-module level (inside `common`) still wait for their own second sibling. Likewise, the change that creates another domain's `<domain>/common` adds a forbidden contract like the `chat/common` one, which keeps it from importing that domain's features.
