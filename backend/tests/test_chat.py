@@ -163,8 +163,8 @@ def client_with(
     app.dependency_overrides[get_llm_provider] = lambda: provider
     app.dependency_overrides[get_retrieval_ports] = lambda: ports
     app.dependency_overrides[get_min_score] = lambda: min_score
-    app.dependency_overrides[get_flight_search] = (
-        lambda: flight_search if flight_search is not None else FakeFlightSearch()
+    app.dependency_overrides[get_flight_search] = lambda: (
+        flight_search if flight_search is not None else FakeFlightSearch()
     )
     app.dependency_overrides[get_today] = lambda: today
     return TestClient(app)

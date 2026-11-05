@@ -97,9 +97,7 @@ async def answer_flight_query(
         return FlightReply(f"{lead_in}\n\n{text}", [])
 
     if query.date < today:
-        text = DATE_PASSED.format(
-            date=format_long_date(query.date), today=format_long_date(today)
-        )
+        text = DATE_PASSED.format(date=format_long_date(query.date), today=format_long_date(today))
         return FlightReply(f"{lead_in}\n\n{text}", [])
 
     flights = await flight_search.search(query.origin, query.destination, query.date)
