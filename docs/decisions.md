@@ -222,3 +222,25 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Templated prompts (RAG context, flight results) will be built from these constants by an `application` service, still without file I/O.
   - The prompt's effect is not unit tested. It is checked with scripted prompts on `pywrangler dev`, kept in the pull request as the seed of the evaluation suite.
   - Each new chat feature is added by hand to the forbidden targets of the `chat/common` contract.
+
+## 18. Policy corpus in `backend/data/`, chunked by a pure `knowledge/ingest` domain, run by a CLI
+
+- **Context**: RAG (decision 14's parent issue, IRO-174) needs Air India policy text, chunked within bge-m3 and Vectorize's limits, and ingested outside the request path. airindia.com is JS-rendered, so a plain HTTP fetch times out.
+- **Decision**:
+  - The corpus is 7 Markdown files in `backend/data/policies/`, with front matter `title`, `source_url` and `retrieved_at`, copied by hand from browser-rendered pages — no scraper. Checked and cabin baggage share one file; an inline `<!-- source_url: ... -->` comment right after a heading overrides the file's front-matter `source_url` for that heading's sections, so the cabin-baggage chunks still cite the cabin page.
+  - `backend/data/` sits outside `src/` for the same reason decision 17 found non-`.py` files under `src/` unreadable on Workers, and because the corpus is never needed at runtime — only its vectors are, once IRO-180 ingests them.
+  - The eval seed lives alongside it, at `backend/data/eval/policy_questions.json`.
+  - The chunker is pure domain logic in a new `knowledge` domain (`knowledge/ingest/domain`): it splits the body at every heading, packs consecutive sections up to 500 estimated tokens (`characters / 4`, no tokenizer dependency), and falls back to paragraph, then line, then hard-character splitting for a single oversized section. Ids are `<slug>-<n>`; metadata is `{title, source_url, section, text}`; the embedded text is `"title > section"` followed by the chunk text. It checks every id and metadata blob against Vectorize's limits (64 bytes, 10 KiB) before returning, so a bad corpus fails at `--dry-run` time, not during the IRO-180 upsert.
+  - The CLI (`knowledge/ingest/presentation/cli.py`, script name `champbot-ingest`) has no adapters yet. When IRO-180 adds the Workers AI and Vectorize calls, they are wired through a new `knowledge/ingest/presentation/dependencies.py`, the one path the adapter-wiring contract already lets through.
+  - A `champbot.chat` / `champbot.knowledge` `independence` contract is added, and `champbot.knowledge` joins the forbidden targets of "Common does not depend on domains".
+- **Alternatives**:
+  - A real tokenizer (tiktoken, or bge-m3's own) instead of `characters / 4`: a heavy dependency the issue explicitly wanted to avoid, for a soft 300-500 token target where chars/4 only slightly over-counts English text.
+  - Chunking by paragraph or a fixed-size sliding window: loses the heading context that `section` and the `"title > section"` embed prefix depend on.
+  - One chunk per heading, with no packing: the FAQ-style pages have 50-150-token Q&As, so this would give many tiny, weak chunks well under the 300-500 target.
+  - A CLI in `backend/scripts/`, outside the `champbot` package: import-linter only checks `champbot`, so a script there could import infrastructure freely and quietly escape the adapter-wiring contract.
+  - YAML or CSV for the eval seed: YAML needs a dependency with no stdlib parser, and CSV cannot hold both the questions and the off-topic queries cleanly.
+- **Consequences**:
+  - Token counts are approximate: `characters / 4` over-counts English text a little, so chunks err small rather than large.
+  - Refreshing the corpus is a manual, dated copy; `retrieved_at` shows how stale it is, and there is no scraper to re-run.
+  - `DocumentChunk` stays inside `knowledge/ingest`. Anything `chat` needs at query time moves to `common/vector_store/domain` in IRO-180 or IRO-181, as the independence contract requires.
+  - The CLI ships inside the Worker bundle like every other module, but nothing imports it, so it has no runtime cost or effect.

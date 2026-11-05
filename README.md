@@ -7,6 +7,7 @@ Open <https://champbot.alejandroyeroval.workers.dev> in a browser for the chat U
 ## Repository layout
 
 - `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project.
+- `backend/data/`: the policy corpus and the retrieval eval seed, outside `src/` so they are never bundled into the Worker.
 - `frontend/`: the static chat UI, served by Workers Static Assets from `frontend/public`.
 - `docs/architecture.md`: backend module layout and dependency rules.
 - `docs/decisions.md`: technical decisions and the reasons behind them.
@@ -123,4 +124,29 @@ uv run pytest
 ```sh
 cd frontend
 npm test
+```
+
+## Policy corpus
+
+Air India policy pages, used for retrieval-augmented `/chat` answers, live as Markdown in `backend/data/policies/`. They were copied by hand from the live [airindia.com](https://www.airindia.com) site on 2026-11-04: the site is JS-rendered, so an automated fetch sees an empty shell, and no scraper was written. Each file's front matter keeps its `title`, `source_url` and `retrieved_at`.
+
+| File | Source |
+|---|---|
+| `checked-and-cabin-baggage.md` | [Checked Baggage Allowance](https://www.airindia.com/in/en/travel-information/baggage-guidelines/checked-baggage-allowance.html), [Cabin Baggage](https://www.airindia.com/in/en/travel-information/baggage-guidelines/cabin-baggage.html) |
+| `baggage-faq.md` | [Baggage FAQs](https://www.airindia.com/in/en/frequently-asked-questions/baggage.html) |
+| `check-in.md` | [Check-in FAQs](https://www.airindia.com/in/en/frequently-asked-questions/check-in.html) |
+| `cancellation-and-refund.md` | [Payment, Refund, and Cancellations FAQ](https://www.airindia.com/in/en/frequently-asked-questions/payment-refund-cancellations.html) |
+| `special-assistance.md` | [Health and Medical Assistance](https://www.airindia.com/in/en/frequently-asked-questions/health-and-medical-assistance.html) |
+| `infants-and-pregnancy.md` | [Expectant Mothers and Infants Travel Guidelines](https://www.airindia.com/in/en/travel-information/first-time-flyers/expected-mothers-infants.html) |
+| `delayed-and-lost-baggage.md` | [Lost and Damaged Baggage Information and Support](https://www.airindia.com/in/en/travel-information/baggage-guidelines/lost-damaged-baggage.html) |
+
+This content is © Air India Limited, condensed and reformatted for this non-commercial technical exercise. It may be out of date, and ChampBot is not affiliated with or endorsed by Air India.
+
+`backend/data/eval/policy_questions.json` has a small seed of policy questions and off-topic queries, used later to calibrate retrieval (IRO-181, IRO-189).
+
+Split the corpus into chunks and check the result against Vectorize's id and metadata limits:
+
+```sh
+cd backend
+uv run champbot-ingest --dry-run
 ```
