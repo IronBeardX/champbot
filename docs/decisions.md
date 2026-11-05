@@ -200,3 +200,25 @@ Every meaningful technical decision, newest last. Each entry records the context
   - The client controls the history, including assistant turns, and can fabricate them. That is harmless while the user is the only party, but anything the server must trust later (for example flight results it appended) cannot be taken back from `history` without being re-derived or verified on the server.
   - The frontend has to keep the conversation and send it. Until it does, it stays single-turn and still works, because `history` defaults to `[]`.
   - Changing a limit only touches the constants in `chat/answer/presentation/serializers.py`, the README and this entry.
+
+## 17. Prompts as Python modules in `chat/common/domain`
+
+- **Context**: the assistant needs a system prompt, and prompts must live in versioned files, not inline strings. The plan was a Markdown file under `src/`, bundled through a wrangler `rules` entry and read once per isolate by a loader. On `pywrangler dev`, a `.md` file under `src/` could not be read at runtime, neither with `"rules": [{"type": "Data", "globs": ["**/*.md"], "fallthrough": true}]` nor without it.
+- **Decision**:
+  - Each prompt is a Python module that holds only its text as a module-level string constant. The first one is `ASSISTANT_SYSTEM_PROMPT` in `chat/common/domain/assistant_prompt.py`.
+  - Prompts live in `chat/common/domain`: they are chat-domain policy shared by every chat feature, and they hold no I/O, so they are neither `infrastructure` nor part of the provider-agnostic `common/llm`.
+  - `chat/answer/presentation/dependencies.py` provides the prompt through `get_system_instruction`, and `POST /chat` passes it to `LLMProvider.generate` as `system_instruction`.
+  - A forbidden import-linter contract keeps `champbot.chat.common` from importing `champbot.chat.answer`.
+  - The prompt covers tone and scope (flights, baggage, check-in, bookings in general terms, policies and destinations), polite refusal of off-topic requests, never inventing flights, bookings or policies, replying in the user's language, and never claiming to be official Air India.
+- **Alternatives**:
+  - Markdown or text files bundled with a wrangler `Data` rule and read at runtime: not readable on `pywrangler dev`, as the check above showed.
+  - `chat/common/infrastructure/prompts/` with a loader: with no file to read there is nothing to adapt, and the adapter-wiring contract would only let `dependencies.py` import it.
+  - `common/llm/domain`: the persona is specific to the chat domain, while `common/llm` is shared plumbing.
+  - `chat/answer/domain`: a second chat feature would need the same persona, so it would move to `chat/common` anyway.
+  - The route importing the constant directly: one function fewer, but the route would change again once prompt rendering moves into a use case.
+- **Consequences**:
+  - A prompt is loaded once per isolate by Python's import cache, with no loader and no missing-file failure: a broken prompt module fails at import, in CI.
+  - Prompt edits are diffs to a `.py` file that holds only text. The text keeps to ruff's 100-character lines.
+  - Templated prompts (RAG context, flight results) will be built from these constants by an `application` service, still without file I/O.
+  - The prompt's effect is not unit tested. It is checked with scripted prompts on `pywrangler dev`, kept in the pull request as the seed of the evaluation suite.
+  - Each new chat feature is added by hand to the forbidden targets of the `chat/common` contract.

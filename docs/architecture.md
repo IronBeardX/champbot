@@ -57,10 +57,13 @@ champbot/
 │       └── presentation/
 │           └── errors.py          # LLMError → 504, 429 or 502, register_llm_error_handlers
 └── chat/
+    ├── common/
+    │   └── domain/
+    │       └── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
     └── answer/                    # feature: POST /chat, multi-turn with client-sent history
         └── presentation/
-            ├── dependencies.py    # get_llm_provider: builds the Gemini adapter from settings
-            ├── rest_api.py        # POST /chat
+            ├── dependencies.py    # get_llm_provider builds the Gemini adapter, get_system_instruction gives the prompt
+            ├── rest_api.py        # POST /chat, sends the system instruction with the conversation
             └── serializers.py     # ChatRequest (message + history), ChatResponse
 ```
 
@@ -84,7 +87,7 @@ champbot/
 | Chat orchestration (retrieve, render the prompt, generate) | `chat/answer/application/services.py` |
 | RAG retrieval | `chat/answer/application/`, or `chat/common` once a second chat feature needs it. It uses the `common/embeddings` and `common/vector_store` interfaces |
 | Streaming answers | A `chat/stream` feature. What it shares with `answer` moves to `chat/common` |
-| Prompts (versioned files) | `chat/common/infrastructure/prompts/`, with a loader next to them. Wrangler only bundles `.py` files by default, so the first prompt change also makes the Worker bundle these files |
+| Prompts (versioned files) | `chat/common/domain/`, one module per prompt that holds only its text as a constant. Python Workers do not make non-`.py` files under `src/` readable at runtime (decision 17) |
 | Embeddings | `common/embeddings`: `Embedder` in `domain`, the Workers AI adapter in `infrastructure` |
 | Vector database | `common/vector_store`: `VectorStore` and `Chunk` in `domain`, the Vectorize adapter in `infrastructure` |
 | Document ingestion | `knowledge/ingest/`, the first feature of a `knowledge` domain, run by a script outside the request path |
@@ -94,10 +97,11 @@ champbot/
 
 `uv run lint-imports` checks these rules with [import-linter](https://import-linter.readthedocs.io/), and CI runs it next to the tests. The contracts live in `backend/pyproject.toml`:
 
-- **Every module is layered**: the layer order inside every module two levels below `champbot` (`champbot.*.*`: `common/core`, `common/llm`, `chat/answer`, and any new one).
+- **Every module is layered**: the layer order inside every module two levels below `champbot` (`champbot.*.*`: `common/core`, `common/llm`, `chat/common`, `chat/answer`, and any new one).
 - **Common does not depend on domains** and **Core does not depend on other common modules**: the upward and sibling rules for `common`. Their forbidden targets are named one by one (`champbot.chat`, `champbot.common.llm`), because a wildcard would also match the source module itself.
+- **Chat common does not depend on chat features**: `chat/common` never imports a `chat` feature, so shared chat code only flows down into features. Its forbidden targets are named one by one (`champbot.chat.answer`) for the same reason.
 - **FastAPI stays in presentation** and **httpx stays in infrastructure**: where third-party packages may be imported. Both check indirect imports too. The `httpx` contract lets `presentation/dependencies.py` reach `httpx` through the adapters it wires, with the same `ignore_imports` as the adapter-wiring contract below.
 - **Only presentation dependencies pick adapters**: outside `presentation/dependencies.py`, no `domain`, `application` or `presentation` code imports an `infrastructure` module, directly or indirectly, in its own module or in another one. `main.py` and `infrastructure` code are exempt, so an adapter may build on `common/core/infrastructure`. The contract covers every presentation file and lets only `dependencies.py` through with `ignore_imports`. That pattern matches modules inside an `infrastructure` package, so `dependencies.py` imports from a module such as `infrastructure.gemini`, never from the `infrastructure` package itself.
 - **Domain and application never reach presentation**: no `domain` or `application` code imports any `presentation` package, in its own module or in another one. Together with the adapter-wiring contract, this closes the indirect route from a use case to an adapter through another module's `dependencies.py`, which the layers contract cannot see because it works inside one module.
 
-The layers, third-party and adapter-wiring contracts use wildcards, so new modules and files are covered without editing them. The two `common` contracts are not: a new domain is added to the forbidden targets of **Common does not depend on domains**, and a new general module to those of **Core does not depend on other common modules**. Sibling independence has nothing to check while each level has a single sibling (one domain, one feature, one general module besides `core`). The change that adds the second one adds an `independence` contract for that level, for example `["champbot.chat", "champbot.knowledge"]`. Likewise, the change that creates the first `<domain>/common` adds a forbidden contract that keeps it from importing that domain's features.
+The layers, third-party and adapter-wiring contracts use wildcards, so new modules and files are covered without editing them. The `common` contracts are not: a new domain is added to the forbidden targets of **Common does not depend on domains**, a new general module to those of **Core does not depend on other common modules**, and a new chat feature to those of **Chat common does not depend on chat features**. Sibling independence has nothing to check while each level has a single sibling (one domain, one feature, one general module besides `core`). The change that adds the second one adds an `independence` contract for that level, for example `["champbot.chat", "champbot.knowledge"]`. Likewise, the change that creates another domain's `<domain>/common` adds a forbidden contract like the `chat/common` one, which keeps it from importing that domain's features.
