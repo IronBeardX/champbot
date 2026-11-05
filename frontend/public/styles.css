@@ -75,6 +75,29 @@ button {
   background: #fbeaea;
 }
 
+.turn .intent {
+  display: block;
+  font-size: 0.75rem;
+  color: #555;
+  margin-bottom: 0.25rem;
+}
+
+.turn .sources {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.turn .sources ul {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+.turn a {
+  color: #0b4f9c;
+  overflow-wrap: anywhere;
+}
+
 footer {
   margin-top: 2rem;
   font-size: 0.85rem;

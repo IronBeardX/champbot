@@ -1,5 +1,5 @@
 import { buildHistory } from "./history.js";
-import { NETWORK_ERROR_MESSAGE, readReply } from "./reply.js";
+import { INTENT_LABELS, NETWORK_ERROR_MESSAGE, readReply } from "./reply.js";
 
 const form = document.querySelector("#chat-form");
 const messageField = document.querySelector("#message");
@@ -15,6 +15,50 @@ function addTurn(className, text) {
   item.textContent = text;
   conversation.append(item);
   return item;
+}
+
+function renderAnswer(item, reply) {
+  item.replaceChildren();
+  item.className = "turn assistant";
+
+  if (reply.intent !== null) {
+    const intent = document.createElement("span");
+    intent.className = "intent";
+    intent.textContent = INTENT_LABELS[reply.intent];
+    item.append(intent);
+  }
+
+  const answer = document.createElement("div");
+  answer.className = "answer";
+  answer.textContent = reply.answer;
+  item.append(answer);
+
+  if (reply.sources.length > 0) {
+    const sources = document.createElement("div");
+    sources.className = "sources";
+
+    const label = document.createElement("span");
+    label.textContent = "Sources";
+    sources.append(label);
+
+    const list = document.createElement("ul");
+    for (const source of reply.sources) {
+      const entry = document.createElement("li");
+      if (source.href !== null) {
+        const link = document.createElement("a");
+        link.href = source.href;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        link.textContent = source.title;
+        entry.append(link);
+      } else {
+        entry.textContent = source.title;
+      }
+      list.append(entry);
+    }
+    sources.append(list);
+    item.append(sources);
+  }
 }
 
 function setButtonsDisabled(disabled) {
@@ -40,8 +84,7 @@ form.addEventListener("submit", async (event) => {
     });
     const reply = await readReply(response);
     if (reply.answer !== undefined) {
-      pending.textContent = reply.answer;
-      pending.className = "turn assistant";
+      renderAnswer(pending, reply);
       turns.push({ user: message, assistant: reply.answer });
       messageField.value = "";
     } else {
