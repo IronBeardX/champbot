@@ -41,7 +41,7 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "Ca
 curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "And to Lisbon?", "history": [{"role": "user", "text": "Can I change my flight to Porto?"}, {"role": "assistant", "text": "Yes, you can change it online."}]}'
 ```
 
-`POST /chat` sends `message` (1 to 2000 characters, not blank) plus an optional `history` of earlier turns, and returns `{"answer": "...", "sources": [{"title": "...", "url": "..."}]}`. The Worker keeps no state: it answers from exactly what the request sends, so the client must resend the whole conversation on every turn. Every turn retrieves the top-5 Air India policy chunks for the question (the last two user turns, embedded and matched against Vectorize) and grounds the answer on the ones scoring at or above `RETRIEVAL_MIN_SCORE`; `sources` lists the title and URL of each chunk actually used, deduplicated by URL and built by the server, never by the model. With no chunk above the threshold, `sources` is `[]` and the assistant says it doesn't have that information.
+`POST /chat` sends `message` (1 to 2000 characters, not blank) plus an optional `history` of earlier turns, and returns `{"intent": "policy" | "flight_search" | "general", "answer": "...", "sources": [{"title": "...", "url": "..."}]}`. The Worker keeps no state: it answers from exactly what the request sends, so the client must resend the whole conversation on every turn. A single Gemini call, prompted for structured JSON output, both classifies the turn's `intent` (judged from the whole conversation, so a slot-filling reply like "Mumbai" after a flight question still routes as `flight_search`) and writes the answer — no separate classifier call. Every turn retrieves the top-5 Air India policy chunks for the question (the last two user turns, embedded and matched against Vectorize) and grounds the answer on the ones scoring at or above `RETRIEVAL_MIN_SCORE`; `sources` lists the title and URL of only the chunks the model actually cited, deduplicated by URL and resolved by the server against the numbered excerpts it sent, never parsed from the model's answer text. With no chunk cited, `sources` is `[]`. There is no flight search yet: a `flight_search` turn gets a plain answer that asks for missing details and never invents a flight.
 
 `history` is a list of `{"role": "user" | "assistant", "text": "..."}` items, defaulting to `[]`. It alternates roles starting with `user` and ending with `assistant`, since `message` is always the final user turn. `user` texts follow the same 1-2000 character rule as `message`; `assistant` texts must not be blank and are at most 8000 characters each, because answers (for example retrieved or appended by the server) can be longer than a user message. `history` holds at most 20 items and 40 000 characters in total. The client is responsible for trimming the oldest user/assistant pair once it nears these limits. Errors:
 
@@ -50,9 +50,9 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "An
 | 422 | `message` is missing, blank or longer than 2000 characters, or a `history` item has a missing/unknown role, or a blank/too-long text (2000 for `user`, 8000 for `assistant`) | FastAPI's list of validation errors in `detail` |
 | 422 | `history` does not alternate `user`/`assistant` starting with `user`, does not end with an `assistant` turn, or has more than 20 items or more than 40 000 characters in total | FastAPI's list of validation errors in `detail` |
 | 429 | Gemini rate-limits the request. `Retry-After` is set when Gemini gives a delay, capped at one hour | Fixed message in `detail` |
-| 502 | Gemini fails or returns no usable answer, or the Workers AI embedding or Vectorize query fails for any reason other than a timeout | Fixed message in `detail` |
+| 502 | Gemini fails, returns no usable answer, or returns an incomplete or invalid structured answer (truncated, safety-blocked, malformed JSON, or a schema violation), or the Workers AI embedding or Vectorize query fails for any reason other than a timeout | Fixed message in `detail` |
 | 504 | Gemini, Workers AI or Vectorize does not answer within its timeout (25s for Gemini, 10s for retrieval) | Fixed message in `detail` |
-| 500 | Configuration error: `GEMINI_API_KEY`, `GEMINI_MODEL`, `CLOUDFLARE_ACCOUNT_ID`, `CF_RUNTIME_API_TOKEN` or `RETRIEVAL_MIN_SCORE` is missing or, for `RETRIEVAL_MIN_SCORE`, not a finite number; the server log names the variable, never the value. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
+| 500 | Configuration error: `GEMINI_API_KEY`, `GEMINI_MODEL`, `CLOUDFLARE_ACCOUNT_ID`, `CF_RUNTIME_API_TOKEN` or `RETRIEVAL_MIN_SCORE` is missing, `RETRIEVAL_MIN_SCORE` is not a finite number, or `GEMINI_THINKING_LEVEL` is set to something other than `MINIMAL`, `LOW`, `MEDIUM` or `HIGH`; the server log names the variable, never the value. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
 
 ```sh
 curl 'localhost:8000/flights?origin=DEL&destination=LHR&date=2026-11-09'
@@ -94,7 +94,7 @@ uv run pywrangler secret put CF_RUNTIME_API_TOKEN
 uv run pywrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-The model id and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code.
+The model id, the thinking level and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `GEMINI_THINKING_LEVEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code.
 
 To deploy by hand, log in to Cloudflare once with `uv run pywrangler login`, then:
 

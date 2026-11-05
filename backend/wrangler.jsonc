@@ -8,6 +8,7 @@
 	],
 	"vars": {
 		"GEMINI_MODEL": "gemini-3.6-flash",
+		"GEMINI_THINKING_LEVEL": "LOW",
 		"RETRIEVAL_MIN_SCORE": "0.5"
 	},
 	"assets": {

@@ -43,7 +43,7 @@ champbot/
 │   │   ├── domain/
 │   │   │   └── exceptions.py      # ChampBotError (base of every error the app raises), MissingSettingError
 │   │   ├── infrastructure/
-│   │   │   ├── settings.py        # Workers env or os.environ lookup, require_setting
+│   │   │   ├── settings.py        # Workers env or os.environ lookup, require_setting, optional_setting
 │   │   │   ├── cloudflare.py      # CloudflareSettings, load_cloudflare_settings, CLOUDFLARE_API_BASE, describe_cloudflare_errors
 │   │   │   └── http_client.py     # open_http_client: the one place presentation code reaches an httpx.AsyncClient
 │   │   └── presentation/
@@ -54,8 +54,8 @@ champbot/
 │   │   │   ├── message.py         # Role and Message value objects of a conversation
 │   │   │   └── provider.py        # LLMProvider interface and the LLMError hierarchy
 │   │   ├── infrastructure/
-│   │   │   ├── gemini.py          # GeminiProvider over the Gemini REST API
-│   │   │   └── settings.py        # GeminiSettings, load_gemini_settings
+│   │   │   ├── gemini.py          # GeminiProvider over the Gemini REST API, optional response_schema and thinking_level
+│   │   │   └── settings.py        # GeminiSettings (incl. thinking_level), load_gemini_settings
 │   │   └── presentation/
 │   │       └── errors.py          # LLMError → 504, 429 or 502, register_llm_error_handlers
 │   ├── flights/
@@ -86,17 +86,20 @@ champbot/
 │   ├── common/
 │   │   └── domain/
 │   │       ├── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
-│   │       └── rag_prompt.py      # RAG_PROMPT, RAG_CHUNK, NO_POLICY_CONTEXT: text-only RAG templates
-│   └── answer/                    # feature: POST /chat, multi-turn with client-sent history, RAG-grounded
+│   │       ├── rag_prompt.py      # RAG_PROMPT, RAG_CHUNK, NO_POLICY_CONTEXT: text-only RAG templates
+│   │       └── routing_prompt.py  # ROUTING_PROMPT: text-only intent/citation/flight_search instructions
+│   └── answer/                    # feature: POST /chat, multi-turn with client-sent history, RAG-grounded, structured-output routing
+│       ├── domain/
+│       │   └── structured_answer.py  # Intent, STRUCTURED_ANSWER_SCHEMA, StructuredAnswer (strict pydantic)
 │       ├── application/
 │       │   ├── retrieval.py       # retrieve_policy_chunks: embed, query Vectorize, filter by score (also used by the IRO-189 eval)
-│       │   └── services.py        # answer_chat: builds the retrieval query, renders the rag prompt, calls the LLM, builds sources
+│       │   └── services.py        # answer_chat: builds the retrieval query, renders the rag+routing prompt, calls the LLM with the schema, parses the structured answer, resolves cited sources
 │       ├── infrastructure/
 │       │   └── settings.py        # RetrievalSettings, load_retrieval_settings
 │       └── presentation/
 │           ├── dependencies.py    # get_llm_provider, get_retrieval_ports (TEMP(IRO-164)), get_min_score
 │           ├── rest_api.py        # POST /chat, delegates to answer_chat
-│           └── serializers.py     # ChatRequest (message + history), ChatResponse (answer + sources), SourceResponse
+│           └── serializers.py     # ChatRequest (message + history), ChatResponse (intent + answer + sources), SourceResponse
 └── knowledge/
     └── ingest/                    # feature: policy corpus chunking and ingestion, run by the champbot-ingest CLI
         ├── domain/
@@ -119,7 +122,7 @@ The policy corpus itself lives in `backend/data/policies/` and the eval seed in 
 |---|---|---|
 | `ChampBotError` | `common/core/domain/exceptions.py` | In use: `LLMError`, `MissingSettingError`, `InvalidSettingError`, `InvalidPolicyDocumentError`, `EmbeddingError`, `VectorStoreError` |
 | `error_response()` | `common/core/presentation/errors.py` | In use: every error handler |
-| `settings_lookup()`, `require_setting()` | `common/core/infrastructure/settings.py` | In use: `load_gemini_settings`, `load_cloudflare_settings` |
+| `settings_lookup()`, `require_setting()`, `optional_setting()` | `common/core/infrastructure/settings.py` | In use: `load_gemini_settings`, `load_cloudflare_settings` |
 | `BaseService` | `common/core/application/services.py` | Added with the first use case that orchestrates several steps |
 | `BaseEntity` | `common/core/domain/models.py` | Added with the first domain model |
 | `ApiModel` | `common/core/presentation/serializers.py` | Added when two serializers share configuration |
