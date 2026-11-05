@@ -4,10 +4,11 @@ from itertools import permutations
 
 import pytest
 
+from champbot.common.flights.domain.airports import AIRPORT_CITIES
 from champbot.common.flights.domain.flight import Cabin, Flight
 from champbot.common.flights.infrastructure.schedule_template import ScheduleTemplateFlightSearch
 
-KNOWN_AIRPORTS = ("DEL", "BOM", "BLR", "MAA", "CCU", "HYD", "DXB", "LHR", "JFK", "SIN")
+KNOWN_AIRPORTS = tuple(AIRPORT_CITIES)
 A_FULL_WEEK = [date(2026, 11, 2) + timedelta(days=offset) for offset in range(7)]
 
 
@@ -137,3 +138,14 @@ def test_schedule_is_internally_consistent() -> None:
     assert routes
     for origin, destination in routes:
         assert (destination, origin) in routes
+
+
+def test_every_catalog_airport_is_served_as_origin_and_destination() -> None:
+    flights = all_flights_over_a_full_week()
+
+    origins = {flight.origin for flight in flights}
+    destinations = {flight.destination for flight in flights}
+
+    for code in KNOWN_AIRPORTS:
+        assert code in origins
+        assert code in destinations

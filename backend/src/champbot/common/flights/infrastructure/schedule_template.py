@@ -4,6 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 
+from champbot.common.flights.domain.airports import AirportCode
 from champbot.common.flights.domain.flight import Cabin, Flight
 
 _DAILY = frozenset(range(7))
@@ -14,8 +15,8 @@ _FARE_PCT_RANGE = 51
 @dataclass(frozen=True)
 class _ScheduledFlight:
     flight_number: str
-    origin: str
-    destination: str
+    origin: AirportCode
+    destination: AirportCode
     departs: time
     arrives: time
     arrival_day_offset: int
