@@ -66,6 +66,12 @@ source_modules = ["champbot.common.core"]
 forbidden_modules = ["champbot.common.llm"]
 
 [[tool.importlinter.contracts]]
+name = "Chat common does not depend on chat features"
+type = "forbidden"
+source_modules = ["champbot.chat.common"]
+forbidden_modules = ["champbot.chat.answer"]
+
+[[tool.importlinter.contracts]]
 name = "FastAPI stays in presentation"
 type = "forbidden"
 source_modules = ["champbot.**.domain", "champbot.**.application", "champbot.**.infrastructure"]
