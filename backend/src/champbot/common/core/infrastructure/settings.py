@@ -20,5 +20,10 @@ def require_setting(lookup: Lookup, name: str) -> str:
     return str(value)
 
 
+def optional_setting(lookup: Lookup, name: str, default: str) -> str:
+    value = lookup(name)
+    return str(value) if value else default
+
+
 def _attribute_lookup(workers_env: object) -> Lookup:
     return lambda name: getattr(workers_env, name, None)

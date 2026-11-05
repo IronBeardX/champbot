@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 import httpx
@@ -19,18 +19,34 @@ Handler = Callable[[httpx.Request], httpx.Response]
 HELLO_CONVERSATION = (Message(Role.USER, "Hello"),)
 GREETING_EXCHANGE = (Message(Role.USER, "Hello"), Message(Role.ASSISTANT, "Hi, how can I help?"))
 
+SAMPLE_SCHEMA = {"type": "object", "properties": {"intent": {"type": "string"}}}
+
 
 def generate(
     handler: Handler,
     messages: Sequence[Message] = HELLO_CONVERSATION,
     system_instruction: str | None = None,
+    *,
+    response_schema: Mapping[str, Any] | None = None,
+    thinking_level: str | None = None,
 ) -> str:
-    provider = GeminiProvider("test-key", "test-model", transport=httpx.MockTransport(handler))
-    return asyncio.run(provider.generate(list(messages), system_instruction))
+    provider = GeminiProvider(
+        "test-key",
+        "test-model",
+        transport=httpx.MockTransport(handler),
+        thinking_level=thinking_level,
+    )
+    return asyncio.run(
+        provider.generate(list(messages), system_instruction, response_schema=response_schema)
+    )
 
 
 def answer_with_parts(*parts: dict[str, Any]) -> Handler:
-    body = {"candidates": [{"content": {"role": "model", "parts": list(parts)}}]}
+    body = {
+        "candidates": [
+            {"finishReason": "STOP", "content": {"role": "model", "parts": list(parts)}}
+        ]
+    }
     return lambda _: httpx.Response(200, json=body)
 
 
@@ -60,7 +76,11 @@ def raise_error(error: Exception) -> Handler:
 
 
 def capture_request(
-    messages: Sequence[Message], system_instruction: str | None = None
+    messages: Sequence[Message],
+    system_instruction: str | None = None,
+    *,
+    response_schema: Mapping[str, Any] | None = None,
+    thinking_level: str | None = None,
 ) -> httpx.Request:
     requests: list[httpx.Request] = []
 
@@ -68,15 +88,32 @@ def capture_request(
         requests.append(request)
         return answer_with_parts({"text": "Hi"})(request)
 
-    generate(handler, messages, system_instruction)
+    generate(
+        handler,
+        messages,
+        system_instruction,
+        response_schema=response_schema,
+        thinking_level=thinking_level,
+    )
     [request] = requests
     return request
 
 
 def capture_request_body(
-    messages: Sequence[Message], system_instruction: str | None = None
+    messages: Sequence[Message],
+    system_instruction: str | None = None,
+    *,
+    response_schema: Mapping[str, Any] | None = None,
+    thinking_level: str | None = None,
 ) -> dict[str, Any]:
-    return json.loads(capture_request(messages, system_instruction).content)
+    return json.loads(
+        capture_request(
+            messages,
+            system_instruction,
+            response_schema=response_schema,
+            thinking_level=thinking_level,
+        ).content
+    )
 
 
 def test_sends_user_message_to_configured_model_with_key_in_header() -> None:
@@ -154,7 +191,7 @@ def test_joins_text_parts_and_skips_thoughts() -> None:
 
 
 @pytest.mark.parametrize("finish_reason", ["MAX_TOKENS", "SAFETY"])
-def test_answer_text_is_returned_whatever_the_finish_reason(finish_reason: str) -> None:
+def test_free_text_answer_is_returned_whatever_the_finish_reason(finish_reason: str) -> None:
     body = {
         "candidates": [
             {"finishReason": finish_reason, "content": {"parts": [{"text": "Yes, you"}]}}
@@ -162,6 +199,64 @@ def test_answer_text_is_returned_whatever_the_finish_reason(finish_reason: str) 
     }
 
     assert generate(respond(200, body)) == "Yes, you"
+
+
+def test_sends_response_schema_and_thinking_config_in_generation_config() -> None:
+    body = capture_request_body(
+        HELLO_CONVERSATION, response_schema=SAMPLE_SCHEMA, thinking_level="LOW"
+    )
+
+    assert body["generationConfig"] == {
+        "thinkingConfig": {"thinkingLevel": "LOW"},
+        "responseMimeType": "application/json",
+        "responseJsonSchema": SAMPLE_SCHEMA,
+    }
+
+
+def test_sends_thinking_config_alone_when_no_schema_is_given() -> None:
+    body = capture_request_body(HELLO_CONVERSATION, thinking_level="LOW")
+
+    assert body["generationConfig"] == {"thinkingConfig": {"thinkingLevel": "LOW"}}
+
+
+def test_omits_generation_config_without_schema_or_thinking_level() -> None:
+    body = capture_request_body(HELLO_CONVERSATION)
+
+    assert "generationConfig" not in body
+
+
+def test_schema_call_with_stop_finish_reason_returns_the_json_text() -> None:
+    body = {
+        "candidates": [
+            {"finishReason": "STOP", "content": {"parts": [{"text": '{"intent": "general"}'}]}}
+        ]
+    }
+
+    assert generate(respond(200, body), response_schema=SAMPLE_SCHEMA) == '{"intent": "general"}'
+
+
+@pytest.mark.parametrize(
+    "finish_reason",
+    [
+        pytest.param("MAX_TOKENS", id="max-tokens"),
+        pytest.param("SAFETY", id="safety"),
+        pytest.param("RECITATION", id="recitation"),
+        pytest.param("OTHER", id="other"),
+        pytest.param(None, id="missing"),
+    ],
+)
+def test_schema_call_with_non_stop_finish_reason_raises_unavailable_error(
+    finish_reason: str | None,
+) -> None:
+    candidate: dict[str, Any] = {"content": {"parts": [{"text": '{"intent": "general"}'}]}}
+    if finish_reason is not None:
+        candidate["finishReason"] = finish_reason
+    body = {"candidates": [candidate]}
+
+    with pytest.raises(LLMUnavailableError) as error:
+        generate(respond(200, body), response_schema=SAMPLE_SCHEMA)
+
+    assert '"intent"' not in str(error.value)
 
 
 def test_uses_only_the_first_candidate() -> None:

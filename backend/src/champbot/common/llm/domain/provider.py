@@ -1,4 +1,5 @@
-from typing import Protocol
+from collections.abc import Mapping
+from typing import Any, Protocol
 
 from champbot.common.core.domain.exceptions import ChampBotError
 from champbot.common.llm.domain.message import Message
@@ -6,7 +7,11 @@ from champbot.common.llm.domain.message import Message
 
 class LLMProvider(Protocol):
     async def generate(
-        self, messages: list[Message], system_instruction: str | None = None
+        self,
+        messages: list[Message],
+        system_instruction: str | None = None,
+        *,
+        response_schema: Mapping[str, Any] | None = None,
     ) -> str: ...
 
 

@@ -1,6 +1,7 @@
 import asyncio
 import math
 import re
+from collections.abc import Mapping
 from http import HTTPStatus
 from typing import Any
 
@@ -19,6 +20,7 @@ _GENERATE_CONTENT_URL = (
 _REQUEST_TIMEOUT_SECONDS = 25.0
 _MAX_RETRY_AFTER_SECONDS = 3600
 _RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
+_STOP_FINISH_REASON = "STOP"
 _DURATION_PATTERN = re.compile(r"(\d+(?:\.\d+)?)s")
 _CODE_PATTERN = re.compile(r"[A-Z_]{1,40}")
 
@@ -30,15 +32,25 @@ class GeminiProvider:
         model: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout_seconds: float = _REQUEST_TIMEOUT_SECONDS,
+        thinking_level: str | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
         self._transport = transport
         self._timeout_seconds = timeout_seconds
+        self._thinking_level = thinking_level
 
-    async def generate(self, messages: list[Message], system_instruction: str | None = None) -> str:
+    async def generate(
+        self,
+        messages: list[Message],
+        system_instruction: str | None = None,
+        *,
+        response_schema: Mapping[str, Any] | None = None,
+    ) -> str:
         response = await self._post_generate_content(
-            _build_request_body(messages, system_instruction)
+            _build_request_body(
+                messages, system_instruction, response_schema, self._thinking_level
+            )
         )
         if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
             raise LLMRateLimitError(_parse_retry_delay_seconds(response))
@@ -46,6 +58,8 @@ class GeminiProvider:
             raise LLMUnavailableError(
                 f"Gemini returned HTTP {response.status_code} ({_describe_error_status(response)})"
             )
+        if response_schema is not None:
+            _check_finish_reason(response)
         return _extract_answer(response)
 
     async def _post_generate_content(self, body: dict[str, Any]) -> httpx.Response:
@@ -68,7 +82,12 @@ class GeminiProvider:
             raise LLMUnavailableError(f"Could not reach Gemini: {error!r}") from error
 
 
-def _build_request_body(messages: list[Message], system_instruction: str | None) -> dict[str, Any]:
+def _build_request_body(
+    messages: list[Message],
+    system_instruction: str | None,
+    response_schema: Mapping[str, Any] | None,
+    thinking_level: str | None,
+) -> dict[str, Any]:
     body: dict[str, Any] = {
         "contents": [
             {"role": _gemini_role(message.role), "parts": [{"text": message.text}]}
@@ -77,7 +96,22 @@ def _build_request_body(messages: list[Message], system_instruction: str | None)
     }
     if system_instruction is not None and system_instruction.strip():
         body["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    generation_config = _build_generation_config(response_schema, thinking_level)
+    if generation_config:
+        body["generationConfig"] = generation_config
     return body
+
+
+def _build_generation_config(
+    response_schema: Mapping[str, Any] | None, thinking_level: str | None
+) -> dict[str, Any]:
+    generation_config: dict[str, Any] = {}
+    if thinking_level is not None:
+        generation_config["thinkingConfig"] = {"thinkingLevel": thinking_level}
+    if response_schema is not None:
+        generation_config["responseMimeType"] = "application/json"
+        generation_config["responseJsonSchema"] = dict(response_schema)
+    return generation_config
 
 
 def _gemini_role(role: Role) -> str:
@@ -86,6 +120,19 @@ def _gemini_role(role: Role) -> str:
             return "user"
         case Role.ASSISTANT:
             return "model"
+
+
+def _check_finish_reason(response: httpx.Response) -> None:
+    # A structured answer can't be trusted truncated or filtered: only STOP is usable.
+    try:
+        finish_reason: Any = response.json()["candidates"][0].get("finishReason")
+    except (ValueError, KeyError, IndexError, TypeError):
+        finish_reason = None
+    if finish_reason != _STOP_FINISH_REASON:
+        raise LLMUnavailableError(
+            "Gemini returned an incomplete structured answer "
+            f"({_describe_missing_answer(response)})"
+        )
 
 
 def _extract_answer(response: httpx.Response) -> str:

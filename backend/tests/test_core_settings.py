@@ -3,7 +3,11 @@ from types import SimpleNamespace
 import pytest
 
 from champbot.common.core.domain.exceptions import MissingSettingError
-from champbot.common.core.infrastructure.settings import require_setting, settings_lookup
+from champbot.common.core.infrastructure.settings import (
+    optional_setting,
+    require_setting,
+    settings_lookup,
+)
 
 
 def test_reads_a_setting_from_workers_env_attributes() -> None:
@@ -50,3 +54,19 @@ def test_missing_or_empty_setting_raises_error_naming_it(
         require_setting(lookup, "SOME_SETTING")
 
     assert error.value.name == "SOME_SETTING"
+
+
+def test_optional_setting_returns_the_value_when_present() -> None:
+    lookup = settings_lookup(None, environ={"SOME_SETTING": "from-environ"})
+
+    assert optional_setting(lookup, "SOME_SETTING", "fallback") == "from-environ"
+
+
+@pytest.mark.parametrize("missing_value", [None, ""])
+def test_optional_setting_returns_the_default_when_missing_or_empty(
+    missing_value: str | None,
+) -> None:
+    values = {} if missing_value is None else {"SOME_SETTING": missing_value}
+    lookup = settings_lookup(None, environ=values)
+
+    assert optional_setting(lookup, "SOME_SETTING", "fallback") == "fallback"
