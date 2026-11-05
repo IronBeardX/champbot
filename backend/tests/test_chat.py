@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from champbot.chat.answer.presentation.dependencies import get_llm_provider
+from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMError,
@@ -67,7 +68,9 @@ def test_returns_provider_answer_for_the_message() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"answer": "Yes, you can change it online."}
-    assert provider.calls == [([Message(Role.USER, "  Can I change my flight?")], None)]
+    assert provider.calls == [
+        ([Message(Role.USER, "  Can I change my flight?")], ASSISTANT_SYSTEM_PROMPT)
+    ]
 
 
 @pytest.mark.parametrize(
@@ -108,7 +111,7 @@ def test_message_at_max_length_is_accepted() -> None:
     response = client_with(provider).post("/chat", json={"message": "a" * 2000})
 
     assert response.status_code == 200
-    assert provider.calls == [([Message(Role.USER, "a" * 2000)], None)]
+    assert provider.calls == [([Message(Role.USER, "a" * 2000)], ASSISTANT_SYSTEM_PROMPT)]
 
 
 def conversation(
@@ -144,7 +147,7 @@ def test_history_is_sent_before_the_message_in_order() -> None:
                 Message(Role.ASSISTANT, "Noted, Lisbon it is."),
                 Message(Role.USER, USER_MESSAGE),
             ],
-            None,
+            ASSISTANT_SYSTEM_PROMPT,
         )
     ]
 
@@ -155,7 +158,7 @@ def test_explicit_empty_history_sends_only_the_message() -> None:
     response = client_with(provider).post("/chat", json={"message": USER_MESSAGE, "history": []})
 
     assert response.status_code == 200
-    assert provider.calls == [([Message(Role.USER, USER_MESSAGE)], None)]
+    assert provider.calls == [([Message(Role.USER, USER_MESSAGE)], ASSISTANT_SYSTEM_PROMPT)]
 
 
 @pytest.mark.parametrize(
