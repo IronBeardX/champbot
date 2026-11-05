@@ -66,5 +66,11 @@ class ChatRequest(BaseModel):
         ]
 
 
+class SourceResponse(BaseModel):
+    title: str
+    url: str
+
+
 class ChatResponse(BaseModel):
     answer: str
+    sources: list[SourceResponse]

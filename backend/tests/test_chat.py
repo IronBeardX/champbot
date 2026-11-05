@@ -5,8 +5,15 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from champbot.chat.answer.presentation.dependencies import get_llm_provider
+from champbot.chat.answer.presentation.dependencies import (
+    RetrievalPorts,
+    get_llm_provider,
+    get_min_score,
+    get_retrieval_ports,
+)
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
+from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT, RAG_PROMPT
+from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMError,
@@ -15,10 +22,19 @@ from champbot.common.llm.domain.provider import (
     LLMUnavailableError,
 )
 from champbot.common.llm.infrastructure.gemini import GeminiProvider
+from champbot.common.vector_store.domain.store import (
+    Chunk,
+    ScoredChunk,
+    VectorStoreError,
+    VectorStoreTimeoutError,
+)
 from champbot.main import create_app
 
 INTERNAL_DETAIL = "upstream said: secret internals"
 USER_MESSAGE = "Where is my lost suitcase?"
+NO_CONTEXT_SYSTEM_INSTRUCTION = (
+    f"{ASSISTANT_SYSTEM_PROMPT}\n{RAG_PROMPT.format(context=NO_POLICY_CONTEXT)}"
+)
 
 
 class FakeProvider:
@@ -32,6 +48,35 @@ class FakeProvider:
         if self.error is not None:
             raise self.error
         return self.answer
+
+
+class FakeEmbedder:
+    def __init__(self, vector: list[float] | None = None, error: Exception | None = None) -> None:
+        self._vector = vector if vector is not None else [0.1]
+        self._error = error
+        self.received_texts: list[str] = []
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.received_texts = texts
+        if self._error is not None:
+            raise self._error
+        return [self._vector]
+
+
+class FakeVectorStore:
+    def __init__(
+        self, matches: list[ScoredChunk] | None = None, error: Exception | None = None
+    ) -> None:
+        self._matches = matches if matches is not None else []
+        self._error = error
+
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]:
+        if self._error is not None:
+            raise self._error
+        return self._matches
+
+    async def upsert(self, chunks: list[Chunk]) -> list[str]:
+        raise NotImplementedError
 
 
 def assert_generic_error_body(body: dict[str, Any]) -> None:
@@ -52,12 +97,28 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 def configure_settings_without(monkeypatch: pytest.MonkeyPatch, missing_name: str) -> None:
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_MODEL", "test-model")
+    monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
+    monkeypatch.setenv("CF_RUNTIME_API_TOKEN", "test-token")
+    monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "0.5")
     monkeypatch.delenv(missing_name)
 
 
-def client_with(provider: FakeProvider) -> TestClient:
+def client_with(
+    provider: FakeProvider,
+    *,
+    chunks: list[ScoredChunk] | None = None,
+    embedder: FakeEmbedder | None = None,
+    vector_store: FakeVectorStore | None = None,
+    min_score: float = 0.5,
+) -> TestClient:
     app = create_app()
+    ports = RetrievalPorts(
+        embedder=embedder if embedder is not None else FakeEmbedder(),
+        vector_store=vector_store if vector_store is not None else FakeVectorStore(matches=chunks),
+    )
     app.dependency_overrides[get_llm_provider] = lambda: provider
+    app.dependency_overrides[get_retrieval_ports] = lambda: ports
+    app.dependency_overrides[get_min_score] = lambda: min_score
     return TestClient(app)
 
 
@@ -67,9 +128,9 @@ def test_returns_provider_answer_for_the_message() -> None:
     response = client_with(provider).post("/chat", json={"message": "  Can I change my flight?"})
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "Yes, you can change it online."}
+    assert response.json() == {"answer": "Yes, you can change it online.", "sources": []}
     assert provider.calls == [
-        ([Message(Role.USER, "  Can I change my flight?")], ASSISTANT_SYSTEM_PROMPT)
+        ([Message(Role.USER, "  Can I change my flight?")], NO_CONTEXT_SYSTEM_INSTRUCTION)
     ]
 
 
@@ -80,7 +141,9 @@ def test_sends_the_assistant_prompt_as_system_instruction() -> None:
 
     assert ASSISTANT_SYSTEM_PROMPT.strip(), "a blank prompt would be silently dropped by Gemini"
     [(_, system_instruction)] = provider.calls
-    assert system_instruction == ASSISTANT_SYSTEM_PROMPT
+    assert system_instruction is not None
+    assert system_instruction.startswith(ASSISTANT_SYSTEM_PROMPT)
+    assert NO_POLICY_CONTEXT in system_instruction
 
 
 @pytest.mark.parametrize(
@@ -121,7 +184,7 @@ def test_message_at_max_length_is_accepted() -> None:
     response = client_with(provider).post("/chat", json={"message": "a" * 2000})
 
     assert response.status_code == 200
-    assert provider.calls == [([Message(Role.USER, "a" * 2000)], ASSISTANT_SYSTEM_PROMPT)]
+    assert provider.calls == [([Message(Role.USER, "a" * 2000)], NO_CONTEXT_SYSTEM_INSTRUCTION)]
 
 
 def conversation(
@@ -157,7 +220,7 @@ def test_history_is_sent_before_the_message_in_order() -> None:
                 Message(Role.ASSISTANT, "Noted, Lisbon it is."),
                 Message(Role.USER, USER_MESSAGE),
             ],
-            ASSISTANT_SYSTEM_PROMPT,
+            NO_CONTEXT_SYSTEM_INSTRUCTION,
         )
     ]
 
@@ -168,7 +231,7 @@ def test_explicit_empty_history_sends_only_the_message() -> None:
     response = client_with(provider).post("/chat", json={"message": USER_MESSAGE, "history": []})
 
     assert response.status_code == 200
-    assert provider.calls == [([Message(Role.USER, USER_MESSAGE)], ASSISTANT_SYSTEM_PROMPT)]
+    assert provider.calls == [([Message(Role.USER, USER_MESSAGE)], NO_CONTEXT_SYSTEM_INSTRUCTION)]
 
 
 @pytest.mark.parametrize(
@@ -357,7 +420,16 @@ def test_provider_error_cause_is_logged(caplog: pytest.LogCaptureFixture, error:
     assert str(error) in caplog.text
 
 
-@pytest.mark.parametrize("missing_name", ["GEMINI_API_KEY", "GEMINI_MODEL"])
+MISSING_SETTING_NAMES = [
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL",
+    "CLOUDFLARE_ACCOUNT_ID",
+    "CF_RUNTIME_API_TOKEN",
+    "RETRIEVAL_MIN_SCORE",
+]
+
+
+@pytest.mark.parametrize("missing_name", MISSING_SETTING_NAMES)
 @pytest.mark.usefixtures("no_network")
 def test_missing_setting_returns_generic_json_500(
     monkeypatch: pytest.MonkeyPatch, missing_name: str
@@ -371,7 +443,7 @@ def test_missing_setting_returns_generic_json_500(
     assert missing_name not in response.text
 
 
-@pytest.mark.parametrize("missing_name", ["GEMINI_API_KEY", "GEMINI_MODEL"])
+@pytest.mark.parametrize("missing_name", MISSING_SETTING_NAMES)
 @pytest.mark.usefixtures("no_network")
 def test_missing_setting_is_logged_by_name_never_by_value(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, missing_name: str
@@ -383,6 +455,33 @@ def test_missing_setting_is_logged_by_name_never_by_value(
     assert missing_name in caplog.text
     assert "test-key" not in caplog.text
     assert "test-model" not in caplog.text
+    assert "test-account" not in caplog.text
+    assert "test-token" not in caplog.text
+
+
+@pytest.mark.usefixtures("no_network")
+def test_invalid_min_score_returns_generic_json_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_settings_without(monkeypatch, "RETRIEVAL_MIN_SCORE")
+    monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "abc")
+
+    response = TestClient(create_app()).post("/chat", json={"message": USER_MESSAGE})
+
+    assert response.status_code == 500
+    assert_generic_error_body(response.json())
+    assert "abc" not in response.text
+
+
+@pytest.mark.usefixtures("no_network")
+def test_invalid_min_score_is_logged_by_name_never_by_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    configure_settings_without(monkeypatch, "RETRIEVAL_MIN_SCORE")
+    monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "abc")
+
+    TestClient(create_app()).post("/chat", json={"message": USER_MESSAGE})
+
+    assert "RETRIEVAL_MIN_SCORE" in caplog.text
+    assert "abc" not in caplog.text
 
 
 def raise_read_timeout(_: httpx.Request) -> httpx.Response:
@@ -410,9 +509,100 @@ def test_gemini_failures_never_log_the_api_key(
     provider = GeminiProvider("test-key", "test-model", transport=httpx.MockTransport(handler))
     app = create_app()
     app.dependency_overrides[get_llm_provider] = lambda: provider
+    app.dependency_overrides[get_retrieval_ports] = lambda: RetrievalPorts(
+        embedder=FakeEmbedder(), vector_store=FakeVectorStore()
+    )
+    app.dependency_overrides[get_min_score] = lambda: 0.5
 
     response = TestClient(app).post("/chat", json={"message": USER_MESSAGE})
 
     assert response.status_code >= 400
     assert caplog.text
     assert "test-key" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("error", "status_code"),
+    [
+        pytest.param(EmbeddingTimeoutError(INTERNAL_DETAIL), 504, id="embedding-timeout"),
+        pytest.param(EmbeddingError(INTERNAL_DETAIL), 502, id="embedding-unavailable"),
+        pytest.param(VectorStoreTimeoutError(INTERNAL_DETAIL), 504, id="vector-store-timeout"),
+        pytest.param(VectorStoreError(INTERNAL_DETAIL), 502, id="vector-store-unavailable"),
+    ],
+)
+def test_retrieval_errors_map_to_http_errors_without_internals(
+    error: Exception, status_code: int
+) -> None:
+    provider = FakeProvider(answer="unused")
+    if isinstance(error, (EmbeddingError, EmbeddingTimeoutError)):
+        embedder, vector_store = FakeEmbedder(error=error), FakeVectorStore()
+    else:
+        embedder, vector_store = FakeEmbedder(), FakeVectorStore(error=error)
+
+    response = client_with(provider, embedder=embedder, vector_store=vector_store).post(
+        "/chat", json={"message": USER_MESSAGE}
+    )
+
+    assert response.status_code == status_code
+    assert_generic_error_body(response.json())
+    assert INTERNAL_DETAIL not in response.text
+    assert provider.calls == []
+
+
+def test_sources_are_built_from_kept_chunks_and_deduplicated_by_url() -> None:
+    chunks = [
+        ScoredChunk(
+            id="chunk-1",
+            score=0.9,
+            metadata={
+                "title": "Checked baggage",
+                "text": "23kg in economy",
+                "source_url": "https://www.airindia.com/baggage",
+            },
+        ),
+        ScoredChunk(
+            id="chunk-2",
+            score=0.8,
+            metadata={
+                "title": "Checked baggage (duplicate source)",
+                "text": "more detail",
+                "source_url": "https://www.airindia.com/baggage",
+            },
+        ),
+    ]
+    provider = FakeProvider(answer="You get 23kg in economy.")
+
+    response = client_with(provider, chunks=chunks).post(
+        "/chat", json={"message": "What is my checked baggage allowance?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sources"] == [
+        {"title": "Checked baggage", "url": "https://www.airindia.com/baggage"}
+    ]
+
+
+def test_sources_are_empty_when_nothing_is_kept() -> None:
+    provider = FakeProvider(answer="I don't have that information.")
+
+    response = client_with(provider, chunks=[]).post(
+        "/chat", json={"message": "Do you have a lounge access policy?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
+
+
+def test_followup_turn_retrieval_query_includes_both_user_texts() -> None:
+    embedder = FakeEmbedder()
+    provider = FakeProvider(answer="ok")
+    history = [
+        {"role": "user", "text": "What is the baggage allowance?"},
+        {"role": "assistant", "text": "23kg in economy."},
+    ]
+
+    client_with(provider, embedder=embedder).post(
+        "/chat", json={"message": "What about business class?", "history": history}
+    )
+
+    assert embedder.received_texts == ["What is the baggage allowance?\nWhat about business class?"]

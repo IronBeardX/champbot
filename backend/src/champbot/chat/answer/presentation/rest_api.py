@@ -2,8 +2,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 
-from champbot.chat.answer.presentation.dependencies import get_llm_provider, get_system_instruction
-from champbot.chat.answer.presentation.serializers import ChatRequest, ChatResponse
+from champbot.chat.answer.application.services import answer_chat
+from champbot.chat.answer.presentation.dependencies import (
+    RetrievalPorts,
+    get_llm_provider,
+    get_min_score,
+    get_retrieval_ports,
+)
+from champbot.chat.answer.presentation.serializers import ChatRequest, ChatResponse, SourceResponse
 from champbot.common.llm.domain.provider import LLMProvider
 
 router = APIRouter()
@@ -13,6 +19,17 @@ router = APIRouter()
 async def chat(
     body: ChatRequest,
     provider: Annotated[LLMProvider, Depends(get_llm_provider)],
-    system_instruction: Annotated[str, Depends(get_system_instruction)],
+    ports: Annotated[RetrievalPorts, Depends(get_retrieval_ports)],
+    min_score: Annotated[float, Depends(get_min_score)],
 ) -> ChatResponse:
-    return ChatResponse(answer=await provider.generate(body.to_messages(), system_instruction))
+    result = await answer_chat(
+        body.to_messages(),
+        provider,
+        ports.embedder,
+        ports.vector_store,
+        min_score=min_score,
+    )
+    return ChatResponse(
+        answer=result.answer,
+        sources=[SourceResponse(title=source.title, url=source.url) for source in result.sources],
+    )
