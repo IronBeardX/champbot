@@ -73,6 +73,16 @@ def test_returns_provider_answer_for_the_message() -> None:
     ]
 
 
+def test_sends_the_assistant_prompt_as_system_instruction() -> None:
+    provider = FakeProvider(answer="ok")
+
+    client_with(provider).post("/chat", json={"message": USER_MESSAGE})
+
+    assert ASSISTANT_SYSTEM_PROMPT.strip(), "a blank prompt would be silently dropped by Gemini"
+    [(_, system_instruction)] = provider.calls
+    assert system_instruction == ASSISTANT_SYSTEM_PROMPT
+
+
 @pytest.mark.parametrize(
     "body",
     [
