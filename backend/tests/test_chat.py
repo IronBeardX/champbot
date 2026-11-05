@@ -111,6 +111,178 @@ def test_message_at_max_length_is_accepted() -> None:
     assert provider.calls == [([Message(Role.USER, "a" * 2000)], None)]
 
 
+def conversation(
+    pairs: int, user_text: str = "hi", assistant_text: str = "ok"
+) -> list[dict[str, str]]:
+    history: list[dict[str, str]] = []
+    for _ in range(pairs):
+        history.append({"role": "user", "text": user_text})
+        history.append({"role": "assistant", "text": assistant_text})
+    return history
+
+
+def test_history_is_sent_before_the_message_in_order() -> None:
+    provider = FakeProvider(answer="ok")
+    history = [
+        {"role": "user", "text": "My name is Ana."},
+        {"role": "assistant", "text": "Nice to meet you, Ana."},
+        {"role": "user", "text": "I fly to Lisbon."},
+        {"role": "assistant", "text": "Noted, Lisbon it is."},
+    ]
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    assert response.status_code == 200
+    assert provider.calls == [
+        (
+            [
+                Message(Role.USER, "My name is Ana."),
+                Message(Role.ASSISTANT, "Nice to meet you, Ana."),
+                Message(Role.USER, "I fly to Lisbon."),
+                Message(Role.ASSISTANT, "Noted, Lisbon it is."),
+                Message(Role.USER, USER_MESSAGE),
+            ],
+            None,
+        )
+    ]
+
+
+def test_explicit_empty_history_sends_only_the_message() -> None:
+    provider = FakeProvider(answer="ok")
+
+    response = client_with(provider).post("/chat", json={"message": USER_MESSAGE, "history": []})
+
+    assert response.status_code == 200
+    assert provider.calls == [([Message(Role.USER, USER_MESSAGE)], None)]
+
+
+@pytest.mark.parametrize(
+    "history",
+    [
+        pytest.param("hi", id="not-a-list"),
+        pytest.param([{"text": "hi"}], id="missing-role"),
+        pytest.param([{"role": "system", "text": "hi"}], id="unknown-role"),
+        pytest.param([{"role": "user"}], id="missing-text"),
+        pytest.param([{"role": "user", "text": 123}], id="text-not-a-string"),
+        pytest.param([{"role": "user", "text": "   "}], id="blank-user-text"),
+        pytest.param([{"role": "user", "text": "a" * 2001}], id="user-text-too-long"),
+        pytest.param([{"role": "assistant", "text": "   "}], id="blank-assistant-text"),
+        pytest.param([{"role": "assistant", "text": "a" * 8001}], id="assistant-text-too-long"),
+        pytest.param([{"role": "assistant", "text": "hi"}], id="starts-with-assistant"),
+        pytest.param(
+            [{"role": "user", "text": "hi"}, {"role": "user", "text": "hi2"}],
+            id="two-users-in-a-row",
+        ),
+        pytest.param(
+            [
+                {"role": "user", "text": "hi"},
+                {"role": "assistant", "text": "ok"},
+                {"role": "user", "text": "hi2"},
+            ],
+            id="odd-length-ending-in-user",
+        ),
+        pytest.param(conversation(11), id="too-many-items"),
+        pytest.param(
+            [{"role": "user", "text": "a" * 2000}, {"role": "assistant", "text": "a" * 2001}] * 9
+            + [{"role": "user", "text": "a" * 2000}, {"role": "assistant", "text": "a" * 2001}],
+            id="total-too-long",
+        ),
+    ],
+)
+def test_invalid_history_is_rejected_before_reaching_provider(history: object) -> None:
+    provider = FakeProvider(answer="unused")
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    assert response.status_code == 422
+    assert isinstance(response.json()["detail"], list)
+    assert provider.calls == []
+
+
+@pytest.mark.parametrize(
+    ("history", "expected_phrase"),
+    [
+        pytest.param(
+            [{"role": "assistant", "text": "hi"}],
+            "must have role 'user'",
+            id="alternation",
+        ),
+        pytest.param(
+            [
+                {"role": "user", "text": "hi"},
+                {"role": "assistant", "text": "ok"},
+                {"role": "user", "text": "hi2"},
+            ],
+            "must end with an assistant turn",
+            id="odd-length",
+        ),
+        pytest.param(
+            [{"role": "user", "text": "a" * 2000}, {"role": "assistant", "text": "a" * 2001}] * 9
+            + [{"role": "user", "text": "a" * 2000}, {"role": "assistant", "text": "a" * 2001}],
+            "total at most 40000 characters",
+            id="total-length",
+        ),
+    ],
+)
+def test_history_shape_errors_name_the_rule(
+    history: list[dict[str, str]], expected_phrase: str
+) -> None:
+    response = client_with(FakeProvider(answer="unused")).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    detail = response.json()["detail"]
+    assert detail[0]["loc"] == ["body", "history"]
+    assert expected_phrase in detail[0]["msg"]
+
+
+def test_user_history_item_at_max_length_is_accepted() -> None:
+    provider = FakeProvider(answer="ok")
+    history = [{"role": "user", "text": "a" * 2000}, {"role": "assistant", "text": "ok"}]
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    assert response.status_code == 200
+
+
+def test_assistant_history_item_at_max_length_is_accepted() -> None:
+    provider = FakeProvider(answer="ok")
+    history = [{"role": "user", "text": "hi"}, {"role": "assistant", "text": "a" * 8000}]
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    assert response.status_code == 200
+
+
+def test_history_at_max_item_count_is_accepted() -> None:
+    provider = FakeProvider(answer="ok")
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": conversation(10)}
+    )
+
+    assert response.status_code == 200
+
+
+def test_history_at_max_total_length_is_accepted() -> None:
+    provider = FakeProvider(answer="ok")
+    history = conversation(10, user_text="a" * 2000, assistant_text="a" * 2000)
+
+    response = client_with(provider).post(
+        "/chat", json={"message": USER_MESSAGE, "history": history}
+    )
+
+    assert response.status_code == 200
+
+
 @pytest.mark.parametrize(
     ("error", "status_code"),
     [
