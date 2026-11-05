@@ -2,6 +2,7 @@ from typing import Annotated, Literal
 
 from pydantic import AfterValidator, BaseModel, Field, field_validator
 
+from champbot.chat.answer.domain.structured_answer import Intent
 from champbot.common.llm.domain.message import Message, Role
 
 MAX_USER_TEXT_LENGTH = 2000
@@ -72,5 +73,6 @@ class SourceResponse(BaseModel):
 
 
 class ChatResponse(BaseModel):
+    intent: Intent
     answer: str
     sources: list[SourceResponse]

@@ -1,26 +1,58 @@
 import asyncio
+import json
+from collections.abc import Mapping
+from typing import Any
+
+import pytest
 
 from champbot.chat.answer.application.services import (
     PolicySource,
     answer_chat,
     build_retrieval_query,
-    build_sources,
+    cited_sources,
+    parse_structured_answer,
     render_policy_context,
+    usable_chunks,
 )
+from champbot.chat.answer.domain.structured_answer import STRUCTURED_ANSWER_SCHEMA
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT
+from champbot.chat.common.domain.routing_prompt import ROUTING_PROMPT
 from champbot.common.llm.domain.message import Message, Role
+from champbot.common.llm.domain.provider import LLMUnavailableError
 from champbot.common.vector_store.domain.store import Chunk, ScoredChunk
 
 
 class FakeProvider:
-    def __init__(self, answer: str = "ok") -> None:
+    def __init__(
+        self,
+        answer: str = "ok",
+        *,
+        intent: str = "general",
+        source_ids: list[int] | None = None,
+        raw: str | None = None,
+    ) -> None:
         self.answer = answer
+        self.intent = intent
+        self.source_ids = source_ids if source_ids is not None else []
+        self.raw = raw
         self.calls: list[tuple[list[Message], str | None]] = []
+        self.response_schemas: list[Mapping[str, Any] | None] = []
 
-    async def generate(self, messages: list[Message], system_instruction: str | None = None) -> str:
+    async def generate(
+        self,
+        messages: list[Message],
+        system_instruction: str | None = None,
+        *,
+        response_schema: Mapping[str, Any] | None = None,
+    ) -> str:
         self.calls.append((messages, system_instruction))
-        return self.answer
+        self.response_schemas.append(response_schema)
+        if self.raw is not None:
+            return self.raw
+        return json.dumps(
+            {"intent": self.intent, "answer": self.answer, "source_ids": self.source_ids}
+        )
 
 
 class FakeEmbedder:
@@ -88,13 +120,32 @@ def test_build_retrieval_query_ignores_older_user_turns() -> None:
     assert build_retrieval_query(messages) == "turn two\nturn three"
 
 
+def test_usable_chunks_skips_chunk_missing_text() -> None:
+    chunks = [make_chunk(1, 0.9, text=None)]
+
+    assert usable_chunks(chunks) == []
+
+
+def test_usable_chunks_skips_chunk_missing_source_url() -> None:
+    chunk = ScoredChunk(id="chunk-1", score=0.9, metadata={"title": "Baggage", "text": "x"})
+
+    assert usable_chunks([chunk]) == []
+
+
+def test_usable_chunks_keeps_rank_order() -> None:
+    first = make_chunk(1, 0.9)
+    second = make_chunk(2, 0.8)
+
+    assert usable_chunks([first, second]) == [first, second]
+
+
 def test_render_policy_context_numbers_chunks_in_rank_order() -> None:
-    chunks = [
+    usable = [
         make_chunk(1, 0.9, title="Baggage", text="first body"),
         make_chunk(2, 0.8, title="Check-in", text="second body"),
     ]
 
-    context = render_policy_context(chunks)
+    context = render_policy_context(usable)
 
     assert "[1] Baggage" in context
     assert "first body" in context
@@ -103,23 +154,40 @@ def test_render_policy_context_numbers_chunks_in_rank_order() -> None:
     assert context.index("[1]") < context.index("[2]")
 
 
-def test_render_policy_context_falls_back_when_nothing_kept() -> None:
+def test_render_policy_context_falls_back_when_nothing_usable() -> None:
     assert render_policy_context([]) == NO_POLICY_CONTEXT
 
 
 def test_render_policy_context_renders_literal_braces_verbatim() -> None:
-    chunks = [make_chunk(1, 0.9, text="Fees are {variable} per kg")]
+    usable = [make_chunk(1, 0.9, text="Fees are {variable} per kg")]
 
-    assert "Fees are {variable} per kg" in render_policy_context(chunks)
-
-
-def test_render_policy_context_skips_chunk_missing_text() -> None:
-    chunks = [make_chunk(1, 0.9, text=None)]
-
-    assert render_policy_context(chunks) == NO_POLICY_CONTEXT
+    assert "Fees are {variable} per kg" in render_policy_context(usable)
 
 
-def test_build_sources_deduplicates_by_url_in_rank_order() -> None:
+def test_cited_sources_returns_only_the_cited_chunk() -> None:
+    usable = [make_chunk(1, 0.9, title="Baggage"), make_chunk(2, 0.8, title="Check-in")]
+
+    assert cited_sources(usable, [2]) == [
+        PolicySource(title="Check-in", url=usable[1].metadata["source_url"])
+    ]
+
+
+def test_cited_sources_deduplicates_and_sorts_by_rank() -> None:
+    usable = [make_chunk(1, 0.9, title="Baggage"), make_chunk(2, 0.8, title="Check-in")]
+
+    assert cited_sources(usable, [2, 2, 1]) == [
+        PolicySource(title="Baggage", url=usable[0].metadata["source_url"]),
+        PolicySource(title="Check-in", url=usable[1].metadata["source_url"]),
+    ]
+
+
+def test_cited_sources_drops_duplicate_and_out_of_range_ids() -> None:
+    usable = [make_chunk(1, 0.9), make_chunk(2, 0.8), make_chunk(3, 0.7)]
+
+    assert cited_sources(usable, [0, 7, -1]) == []
+
+
+def test_cited_sources_deduplicates_two_cited_chunks_sharing_a_url() -> None:
     chunk_a = make_chunk(1, 0.9, title="Baggage")
     chunk_b = ScoredChunk(
         id="chunk-1b",
@@ -130,29 +198,61 @@ def test_build_sources_deduplicates_by_url_in_rank_order() -> None:
             "text": "x",
         },
     )
-    chunk_c = make_chunk(2, 0.7, title="Check-in")
+    usable = [chunk_a, chunk_b]
 
-    sources = build_sources([chunk_a, chunk_b, chunk_c])
-
-    assert sources == [
-        PolicySource(title="Baggage", url=chunk_a.metadata["source_url"]),
-        PolicySource(title="Check-in", url=chunk_c.metadata["source_url"]),
+    assert cited_sources(usable, [1, 2]) == [
+        PolicySource(title="Baggage", url=chunk_a.metadata["source_url"])
     ]
 
 
-def test_build_sources_empty_when_nothing_kept() -> None:
-    assert build_sources([]) == []
+def test_cited_sources_empty_when_no_ids_cited() -> None:
+    usable = [make_chunk(1, 0.9)]
+
+    assert cited_sources(usable, []) == []
 
 
-def test_build_sources_skips_chunk_missing_source_url() -> None:
-    chunk = ScoredChunk(id="chunk-1", score=0.9, metadata={"title": "Baggage", "text": "x"})
+def test_cited_sources_numbering_skips_chunks_usable_chunks_dropped() -> None:
+    chunks = [
+        ScoredChunk(id="chunk-1", score=0.9, metadata={"title": "No text", "source_url": "x"}),
+        make_chunk(2, 0.8, title="Baggage"),
+    ]
+    usable = usable_chunks(chunks)
 
-    assert build_sources([chunk]) == []
+    assert cited_sources(usable, [1]) == [
+        PolicySource(title="Baggage", url=usable[0].metadata["source_url"])
+    ]
+
+
+def test_parse_structured_answer_parses_a_valid_payload() -> None:
+    raw = json.dumps({"intent": "policy", "answer": "23kg.", "source_ids": [1]})
+
+    parsed = parse_structured_answer(raw)
+
+    assert parsed.intent == "policy"
+    assert parsed.answer == "23kg."
+    assert parsed.source_ids == [1]
+
+
+def test_parse_structured_answer_raises_unavailable_error_on_invalid_json() -> None:
+    with pytest.raises(LLMUnavailableError) as error:
+        parse_structured_answer("not json")
+
+    assert error.value.__cause__ is None
+
+
+def test_parse_structured_answer_raises_unavailable_error_on_schema_violation() -> None:
+    raw = json.dumps({"intent": "not-a-real-intent", "answer": "Hi", "source_ids": []})
+
+    with pytest.raises(LLMUnavailableError) as error:
+        parse_structured_answer(raw)
+
+    assert error.value.__cause__ is None
+    assert "not-a-real-intent" not in str(error.value)
 
 
 def test_answer_chat_prepends_rag_context_to_the_persona() -> None:
     chunks = [make_chunk(1, 0.9, title="Baggage", text="baggage body")]
-    provider = FakeProvider(answer="Here is the policy.")
+    provider = FakeProvider(answer="Here is the policy.", intent="policy", source_ids=[1])
     messages = [Message(Role.USER, "What is the baggage allowance?")]
 
     result = asyncio.run(
@@ -164,8 +264,11 @@ def test_answer_chat_prepends_rag_context_to_the_persona() -> None:
     assert sent_messages == messages
     assert system_instruction is not None
     assert system_instruction.startswith(ASSISTANT_SYSTEM_PROMPT)
+    assert ROUTING_PROMPT in system_instruction
     assert "[1] Baggage" in system_instruction
     assert "baggage body" in system_instruction
+    assert provider.response_schemas == [STRUCTURED_ANSWER_SCHEMA]
+    assert result.intent == "policy"
     assert result.answer == "Here is the policy."
     assert result.sources == [PolicySource(title="Baggage", url=chunks[0].metadata["source_url"])]
 
@@ -186,11 +289,26 @@ def test_answer_chat_uses_no_policy_context_when_nothing_kept() -> None:
 
 
 def test_answer_chat_never_derives_sources_from_the_model_answer() -> None:
-    provider = FakeProvider(answer="See https://not-a-real-source.example/policy for details.")
+    chunks = [make_chunk(1, 0.9, title="Baggage")]
+    provider = FakeProvider(
+        answer="See https://not-a-real-source.example/policy, source [1], for details."
+    )
     messages = [Message(Role.USER, "What is the baggage allowance?")]
 
     result = asyncio.run(
-        answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore([]), min_score=0.5)
+        answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore(chunks), min_score=0.5)
     )
 
     assert result.sources == []
+
+
+def test_answer_chat_raises_unavailable_error_on_invalid_structured_answer() -> None:
+    provider = FakeProvider(raw="not json")
+    messages = [Message(Role.USER, "Hi")]
+
+    with pytest.raises(LLMUnavailableError) as error:
+        asyncio.run(
+            answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore([]), min_score=0.5)
+        )
+
+    assert error.value.__cause__ is None

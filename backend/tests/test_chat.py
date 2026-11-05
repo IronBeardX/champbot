@@ -1,4 +1,5 @@
-from collections.abc import Callable
+import json
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import httpx
@@ -13,6 +14,7 @@ from champbot.chat.answer.presentation.dependencies import (
 )
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT, RAG_PROMPT
+from champbot.chat.common.domain.routing_prompt import ROUTING_PROMPT
 from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
@@ -33,21 +35,38 @@ from champbot.main import create_app
 INTERNAL_DETAIL = "upstream said: secret internals"
 USER_MESSAGE = "Where is my lost suitcase?"
 NO_CONTEXT_SYSTEM_INSTRUCTION = (
-    f"{ASSISTANT_SYSTEM_PROMPT}\n{RAG_PROMPT.format(context=NO_POLICY_CONTEXT)}"
+    f"{ASSISTANT_SYSTEM_PROMPT}\n{ROUTING_PROMPT}\n{RAG_PROMPT.format(context=NO_POLICY_CONTEXT)}"
 )
 
 
 class FakeProvider:
-    def __init__(self, answer: str = "", error: LLMError | None = None) -> None:
+    def __init__(
+        self,
+        answer: str = "",
+        error: LLMError | None = None,
+        *,
+        intent: str = "general",
+        source_ids: list[int] | None = None,
+    ) -> None:
         self.answer = answer
         self.error = error
+        self.intent = intent
+        self.source_ids = source_ids if source_ids is not None else []
         self.calls: list[tuple[list[Message], str | None]] = []
 
-    async def generate(self, messages: list[Message], system_instruction: str | None = None) -> str:
+    async def generate(
+        self,
+        messages: list[Message],
+        system_instruction: str | None = None,
+        *,
+        response_schema: Mapping[str, Any] | None = None,
+    ) -> str:
         self.calls.append((messages, system_instruction))
         if self.error is not None:
             raise self.error
-        return self.answer
+        return json.dumps(
+            {"intent": self.intent, "answer": self.answer, "source_ids": self.source_ids}
+        )
 
 
 class FakeEmbedder:
@@ -128,10 +147,23 @@ def test_returns_provider_answer_for_the_message() -> None:
     response = client_with(provider).post("/chat", json={"message": "  Can I change my flight?"})
 
     assert response.status_code == 200
-    assert response.json() == {"answer": "Yes, you can change it online.", "sources": []}
+    assert response.json() == {
+        "intent": "general",
+        "answer": "Yes, you can change it online.",
+        "sources": [],
+    }
     assert provider.calls == [
         ([Message(Role.USER, "  Can I change my flight?")], NO_CONTEXT_SYSTEM_INSTRUCTION)
     ]
+
+
+def test_returns_the_intent_the_provider_chose() -> None:
+    provider = FakeProvider(answer="Searching...", intent="flight_search")
+
+    response = client_with(provider).post("/chat", json={"message": "flights to London"})
+
+    assert response.status_code == 200
+    assert response.json()["intent"] == "flight_search"
 
 
 def test_sends_the_assistant_prompt_as_system_instruction() -> None:
@@ -484,6 +516,33 @@ def test_invalid_min_score_is_logged_by_name_never_by_value(
     assert "abc" not in caplog.text
 
 
+@pytest.mark.usefixtures("no_network")
+def test_invalid_thinking_level_returns_generic_json_500(monkeypatch: pytest.MonkeyPatch) -> None:
+    configure_settings_without(monkeypatch, "RETRIEVAL_MIN_SCORE")
+    monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "0.5")
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "FAST")
+
+    response = TestClient(create_app()).post("/chat", json={"message": USER_MESSAGE})
+
+    assert response.status_code == 500
+    assert_generic_error_body(response.json())
+    assert "FAST" not in response.text
+
+
+@pytest.mark.usefixtures("no_network")
+def test_invalid_thinking_level_is_logged_by_name_never_by_value(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    configure_settings_without(monkeypatch, "RETRIEVAL_MIN_SCORE")
+    monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "0.5")
+    monkeypatch.setenv("GEMINI_THINKING_LEVEL", "FAST")
+
+    TestClient(create_app()).post("/chat", json={"message": USER_MESSAGE})
+
+    assert "GEMINI_THINKING_LEVEL" in caplog.text
+    assert "FAST" not in caplog.text
+
+
 def raise_read_timeout(_: httpx.Request) -> httpx.Response:
     raise httpx.ReadTimeout("timed out")
 
@@ -549,7 +608,7 @@ def test_retrieval_errors_map_to_http_errors_without_internals(
     assert provider.calls == []
 
 
-def test_sources_are_built_from_kept_chunks_and_deduplicated_by_url() -> None:
+def test_sources_are_built_from_cited_chunks_and_deduplicated_by_url() -> None:
     chunks = [
         ScoredChunk(
             id="chunk-1",
@@ -570,7 +629,7 @@ def test_sources_are_built_from_kept_chunks_and_deduplicated_by_url() -> None:
             },
         ),
     ]
-    provider = FakeProvider(answer="You get 23kg in economy.")
+    provider = FakeProvider(answer="You get 23kg in economy.", source_ids=[1, 2])
 
     response = client_with(provider, chunks=chunks).post(
         "/chat", json={"message": "What is my checked baggage allowance?"}
@@ -582,7 +641,29 @@ def test_sources_are_built_from_kept_chunks_and_deduplicated_by_url() -> None:
     ]
 
 
-def test_sources_are_empty_when_nothing_is_kept() -> None:
+def test_sources_are_empty_when_nothing_is_cited() -> None:
+    chunks = [
+        ScoredChunk(
+            id="chunk-1",
+            score=0.9,
+            metadata={
+                "title": "Checked baggage",
+                "text": "23kg in economy",
+                "source_url": "https://www.airindia.com/baggage",
+            },
+        )
+    ]
+    provider = FakeProvider(answer="I don't have that information.")
+
+    response = client_with(provider, chunks=chunks).post(
+        "/chat", json={"message": "Do you have a lounge access policy?"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
+
+
+def test_sources_are_empty_when_nothing_was_retrieved() -> None:
     provider = FakeProvider(answer="I don't have that information.")
 
     response = client_with(provider, chunks=[]).post(

@@ -30,6 +30,7 @@ async def chat(
         min_score=min_score,
     )
     return ChatResponse(
+        intent=result.intent,
         answer=result.answer,
         sources=[SourceResponse(title=source.title, url=source.url) for source in result.sources],
     )
