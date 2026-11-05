@@ -41,7 +41,7 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "Ca
 curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "And to Lisbon?", "history": [{"role": "user", "text": "Can I change my flight to Porto?"}, {"role": "assistant", "text": "Yes, you can change it online."}]}'
 ```
 
-`POST /chat` sends `message` (1 to 2000 characters, not blank) plus an optional `history` of earlier turns, and returns `{"answer": "..."}`. The Worker keeps no state: it answers from exactly what the request sends, so the client must resend the whole conversation on every turn.
+`POST /chat` sends `message` (1 to 2000 characters, not blank) plus an optional `history` of earlier turns, and returns `{"answer": "...", "sources": [{"title": "...", "url": "..."}]}`. The Worker keeps no state: it answers from exactly what the request sends, so the client must resend the whole conversation on every turn. Every turn retrieves the top-5 Air India policy chunks for the question (the last two user turns, embedded and matched against Vectorize) and grounds the answer on the ones scoring at or above `RETRIEVAL_MIN_SCORE`; `sources` lists the title and URL of each chunk actually used, deduplicated by URL and built by the server, never by the model. With no chunk above the threshold, `sources` is `[]` and the assistant says it doesn't have that information.
 
 `history` is a list of `{"role": "user" | "assistant", "text": "..."}` items, defaulting to `[]`. It alternates roles starting with `user` and ending with `assistant`, since `message` is always the final user turn. `user` texts follow the same 1-2000 character rule as `message`; `assistant` texts must not be blank and are at most 8000 characters each, because answers (for example retrieved or appended by the server) can be longer than a user message. `history` holds at most 20 items and 40 000 characters in total. The client is responsible for trimming the oldest user/assistant pair once it nears these limits. Errors:
 
@@ -50,9 +50,9 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "An
 | 422 | `message` is missing, blank or longer than 2000 characters, or a `history` item has a missing/unknown role, or a blank/too-long text (2000 for `user`, 8000 for `assistant`) | FastAPI's list of validation errors in `detail` |
 | 422 | `history` does not alternate `user`/`assistant` starting with `user`, does not end with an `assistant` turn, or has more than 20 items or more than 40 000 characters in total | FastAPI's list of validation errors in `detail` |
 | 429 | Gemini rate-limits the request. `Retry-After` is set when Gemini gives a delay, capped at one hour | Fixed message in `detail` |
-| 502 | Gemini fails or returns no usable answer | Fixed message in `detail` |
-| 504 | Gemini does not answer within 25 seconds | Fixed message in `detail` |
-| 500 | Configuration error: `GEMINI_API_KEY` or `GEMINI_MODEL` is missing; the server log names the variable. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
+| 502 | Gemini fails or returns no usable answer, or the Workers AI embedding or Vectorize query fails for any reason other than a timeout | Fixed message in `detail` |
+| 504 | Gemini, Workers AI or Vectorize does not answer within its timeout (25s for Gemini, 10s for retrieval) | Fixed message in `detail` |
+| 500 | Configuration error: `GEMINI_API_KEY`, `GEMINI_MODEL`, `CLOUDFLARE_ACCOUNT_ID`, `CF_RUNTIME_API_TOKEN` or `RETRIEVAL_MIN_SCORE` is missing or, for `RETRIEVAL_MIN_SCORE`, not a finite number; the server log names the variable, never the value. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
 
 ```sh
 curl 'localhost:8000/flights?origin=DEL&destination=LHR&date=2026-11-09'
@@ -85,14 +85,16 @@ cd backend
 uv run pywrangler deployments list
 ```
 
-The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`. The Worker needs one:
+The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`. The Worker needs three:
 
 ```sh
 cd backend
 uv run pywrangler secret put GEMINI_API_KEY
+uv run pywrangler secret put CF_RUNTIME_API_TOKEN
+uv run pywrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-The model id is a plain variable in `backend/wrangler.jsonc`, deployed with the code.
+The model id and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code.
 
 To deploy by hand, log in to Cloudflare once with `uv run pywrangler login`, then:
 

@@ -7,7 +7,8 @@
 		"python_workers"
 	],
 	"vars": {
-		"GEMINI_MODEL": "gemini-3.6-flash"
+		"GEMINI_MODEL": "gemini-3.6-flash",
+		"RETRIEVAL_MIN_SCORE": "0.5"
 	},
 	"assets": {
 		"directory": "../frontend/public"

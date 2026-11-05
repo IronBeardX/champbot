@@ -70,23 +70,33 @@ champbot/
 │   │       └── serializers.py     # FlightSearchQuery, FlightResponse
 │   ├── embeddings/
 │   │   ├── domain/
-│   │   │   └── embedder.py        # Embedder interface and EmbeddingError
-│   │   └── infrastructure/
-│   │       └── workers_ai.py      # WorkersAIEmbedder over the Workers AI REST API (@cf/baai/bge-m3)
+│   │   │   └── embedder.py        # Embedder interface, EmbeddingError and EmbeddingTimeoutError
+│   │   ├── infrastructure/
+│   │   │   └── workers_ai.py      # WorkersAIEmbedder over the Workers AI REST API (@cf/baai/bge-m3)
+│   │   └── presentation/
+│   │       └── errors.py          # EmbeddingError → 504 or 502, register_embedding_error_handlers
 │   └── vector_store/
 │       ├── domain/
-│       │   └── store.py           # Chunk value object, VectorStore interface (upsert only) and VectorStoreError
-│       └── infrastructure/
-│           └── vectorize.py       # VectorizeStore over the Vectorize v2 REST API
+│       │   └── store.py           # Chunk, ScoredChunk, VectorStore interface (upsert and query), VectorStoreError and VectorStoreTimeoutError
+│       ├── infrastructure/
+│       │   └── vectorize.py       # VectorizeStore over the Vectorize v2 REST API
+│       └── presentation/
+│           └── errors.py          # VectorStoreError → 504 or 502, register_vector_store_error_handlers
 ├── chat/
 │   ├── common/
 │   │   └── domain/
-│   │       └── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
-│   └── answer/                    # feature: POST /chat, multi-turn with client-sent history
+│   │       ├── assistant_prompt.py  # ASSISTANT_SYSTEM_PROMPT: Air India assistant persona
+│   │       └── rag_prompt.py      # RAG_PROMPT, RAG_CHUNK, NO_POLICY_CONTEXT: text-only RAG templates
+│   └── answer/                    # feature: POST /chat, multi-turn with client-sent history, RAG-grounded
+│       ├── application/
+│       │   ├── retrieval.py       # retrieve_policy_chunks: embed, query Vectorize, filter by score (also used by the IRO-189 eval)
+│       │   └── services.py        # answer_chat: builds the retrieval query, renders the rag prompt, calls the LLM, builds sources
+│       ├── infrastructure/
+│       │   └── settings.py        # RetrievalSettings, load_retrieval_settings
 │       └── presentation/
-│           ├── dependencies.py    # get_llm_provider builds the Gemini adapter, get_system_instruction gives the prompt
-│           ├── rest_api.py        # POST /chat, sends the system instruction with the conversation
-│           └── serializers.py     # ChatRequest (message + history), ChatResponse
+│           ├── dependencies.py    # get_llm_provider, get_retrieval_ports (TEMP(IRO-164)), get_min_score
+│           ├── rest_api.py        # POST /chat, delegates to answer_chat
+│           └── serializers.py     # ChatRequest (message + history), ChatResponse (answer + sources), SourceResponse
 └── knowledge/
     └── ingest/                    # feature: policy corpus chunking and ingestion, run by the champbot-ingest CLI
         ├── domain/
@@ -107,7 +117,7 @@ The policy corpus itself lives in `backend/data/policies/` and the eval seed in 
 
 | Base or helper | Location | Status |
 |---|---|---|
-| `ChampBotError` | `common/core/domain/exceptions.py` | In use: `LLMError`, `MissingSettingError`, `InvalidPolicyDocumentError` |
+| `ChampBotError` | `common/core/domain/exceptions.py` | In use: `LLMError`, `MissingSettingError`, `InvalidSettingError`, `InvalidPolicyDocumentError`, `EmbeddingError`, `VectorStoreError` |
 | `error_response()` | `common/core/presentation/errors.py` | In use: every error handler |
 | `settings_lookup()`, `require_setting()` | `common/core/infrastructure/settings.py` | In use: `load_gemini_settings`, `load_cloudflare_settings` |
 | `BaseService` | `common/core/application/services.py` | Added with the first use case that orchestrates several steps |
@@ -118,8 +128,6 @@ The policy corpus itself lives in `backend/data/policies/` and the eval seed in 
 
 | Piece | Location |
 |---|---|
-| Chat orchestration (retrieve, render the prompt, generate) | `chat/answer/application/services.py` |
-| RAG retrieval | `chat/answer/application/`, or `chat/common` once a second chat feature needs it. It uses the `common/embeddings` and `common/vector_store` interfaces, which exist (IRO-180) but are called today only by `knowledge/ingest` |
 | Streaming answers | A `chat/stream` feature. What it shares with `answer` moves to `chat/common` |
 | Prompts (versioned files) | `chat/common/domain/`, one module per prompt that holds only its text as a constant. Python Workers do not make non-`.py` files under `src/` readable at runtime (decision 17) |
 | Document ingestion | `knowledge/ingest/`: the chunker, the `champbot-ingest --dry-run` CLI (IRO-178), and its write path (IRO-180) embedding every chunk through `Embedder` and upserting through `VectorStore`, wired from `knowledge/ingest/presentation/dependencies.py` |
