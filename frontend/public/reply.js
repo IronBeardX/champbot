@@ -1,6 +1,12 @@
 export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check your connection and try again.";
 
+export const INTENT_LABELS = {
+  policy: "Policy",
+  flight_search: "Flight search",
+  general: "General",
+};
+
 const UNEXPECTED_RESPONSE_MESSAGE = "Unexpected response from the server.";
 
 const FIXED_STATUS_MESSAGES = {
@@ -19,6 +25,32 @@ function rateLimitMessage(response) {
   return "Too many requests. Try again shortly.";
 }
 
+export function httpsHref(url) {
+  if (typeof url !== "string") {
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  return parsed.protocol === "https:" ? parsed.href : null;
+}
+
+function readIntent(raw) {
+  return typeof raw === "string" && raw in INTENT_LABELS ? raw : null;
+}
+
+function readSources(raw) {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .filter((entry) => typeof entry?.title === "string" && entry.title.trim() !== "")
+    .map((entry) => ({ title: entry.title, href: httpsHref(entry.url) }));
+}
+
 async function readAnswer(response) {
   let body;
   try {
@@ -27,7 +59,11 @@ async function readAnswer(response) {
     return { error: UNEXPECTED_RESPONSE_MESSAGE };
   }
   if (typeof body?.answer === "string") {
-    return { answer: body.answer };
+    return {
+      answer: body.answer,
+      intent: readIntent(body.intent),
+      sources: readSources(body.sources),
+    };
   }
   return { error: UNEXPECTED_RESPONSE_MESSAGE };
 }
