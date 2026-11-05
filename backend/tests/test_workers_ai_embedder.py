@@ -6,7 +6,7 @@ from typing import Any
 import httpx
 import pytest
 
-from champbot.common.embeddings.domain.embedder import EmbeddingError
+from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
 from champbot.common.embeddings.infrastructure.workers_ai import WorkersAIEmbedder
 
 Handler = Callable[[httpx.Request], httpx.Response]
@@ -147,11 +147,20 @@ def test_connect_error_raises_embedding_error() -> None:
         embed(handler, ["hello"])
 
 
-def test_timeout_raises_embedding_error() -> None:
+def test_timeout_raises_embedding_timeout_error() -> None:
     handler = raise_error(httpx.ReadTimeout("boom"))
 
-    with pytest.raises(EmbeddingError):
+    with pytest.raises(EmbeddingTimeoutError):
         embed(handler, ["hello"])
+
+
+def test_connect_error_does_not_raise_the_timeout_subclass() -> None:
+    handler = raise_error(httpx.ConnectError("boom"))
+
+    with pytest.raises(EmbeddingError) as error:
+        embed(handler, ["hello"])
+
+    assert not isinstance(error.value, EmbeddingTimeoutError)
 
 
 def test_error_message_never_contains_the_token_or_input_text() -> None:

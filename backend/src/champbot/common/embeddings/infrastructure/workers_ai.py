@@ -7,7 +7,7 @@ from champbot.common.core.infrastructure.cloudflare import (
     CLOUDFLARE_API_BASE,
     describe_cloudflare_errors,
 )
-from champbot.common.embeddings.domain.embedder import EmbeddingError
+from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
 
 _MODEL = "@cf/baai/bge-m3"
 _MAX_TEXTS_PER_REQUEST = 50
@@ -53,7 +53,7 @@ class WorkersAIEmbedder:
                     timeout=self._timeout_seconds,
                 )
         except (TimeoutError, httpx.TimeoutException) as error:
-            raise EmbeddingError("Workers AI did not answer in time") from error
+            raise EmbeddingTimeoutError("Workers AI did not answer in time") from error
         except (httpx.HTTPError, httpx.InvalidURL) as error:
             raise EmbeddingError(f"Could not reach Workers AI: {error!r}") from error
 

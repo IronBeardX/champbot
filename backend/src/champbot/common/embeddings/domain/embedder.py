@@ -9,3 +9,7 @@ class Embedder(Protocol):
 
 class EmbeddingError(ChampBotError):
     pass
+
+
+class EmbeddingTimeoutError(EmbeddingError):
+    pass
