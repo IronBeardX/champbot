@@ -27,9 +27,7 @@ class RetrievalPorts:
 
 def get_llm_provider(request: Request) -> LLMProvider:
     settings = load_gemini_settings(request.scope.get("env"))
-    return GeminiProvider(
-        settings.api_key, settings.model, thinking_level=settings.thinking_level
-    )
+    return GeminiProvider(settings.api_key, settings.model, thinking_level=settings.thinking_level)
 
 
 async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts]:

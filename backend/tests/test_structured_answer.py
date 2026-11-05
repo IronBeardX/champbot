@@ -24,13 +24,9 @@ def test_parses_a_valid_payload() -> None:
 @pytest.mark.parametrize(
     "payload",
     [
-        pytest.param(
-            '{"intent": "urgent", "answer": "Hi", "source_ids": []}', id="unknown-intent"
-        ),
+        pytest.param('{"intent": "urgent", "answer": "Hi", "source_ids": []}', id="unknown-intent"),
         pytest.param('{"answer": "Hi", "source_ids": []}', id="missing-intent"),
-        pytest.param(
-            '{"intent": "general", "answer": "  ", "source_ids": []}', id="blank-answer"
-        ),
+        pytest.param('{"intent": "general", "answer": "  ", "source_ids": []}', id="blank-answer"),
         pytest.param(
             '{"intent": "general", "answer": "Hi", "source_ids": ["1"]}', id="string-source-id"
         ),

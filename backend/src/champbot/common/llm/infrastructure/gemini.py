@@ -48,9 +48,7 @@ class GeminiProvider:
         response_schema: Mapping[str, Any] | None = None,
     ) -> str:
         response = await self._post_generate_content(
-            _build_request_body(
-                messages, system_instruction, response_schema, self._thinking_level
-            )
+            _build_request_body(messages, system_instruction, response_schema, self._thinking_level)
         )
         if response.status_code == HTTPStatus.TOO_MANY_REQUESTS:
             raise LLMRateLimitError(_parse_retry_delay_seconds(response))

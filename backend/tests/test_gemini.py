@@ -43,9 +43,7 @@ def generate(
 
 def answer_with_parts(*parts: dict[str, Any]) -> Handler:
     body = {
-        "candidates": [
-            {"finishReason": "STOP", "content": {"role": "model", "parts": list(parts)}}
-        ]
+        "candidates": [{"finishReason": "STOP", "content": {"role": "model", "parts": list(parts)}}]
     }
     return lambda _: httpx.Response(200, json=body)
 
