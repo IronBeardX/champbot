@@ -156,3 +156,12 @@ Split the corpus into chunks and check the result against Vectorize's id and met
 cd backend
 uv run champbot-ingest --dry-run
 ```
+
+Embed the corpus with Workers AI `bge-m3` and upsert it into Vectorize (needs `CLOUDFLARE_ACCOUNT_ID` and `CF_INGEST_API_TOKEN` in `.env`):
+
+```sh
+cd backend
+uv run --env-file ../.env champbot-ingest
+```
+
+Vectorize applies the upsert asynchronously, so the vector count in the Cloudflare dashboard may take a minute to catch up. Chunk ids are stable (`<slug>-<n>`), so re-running the command overwrites the same vectors instead of duplicating them.
