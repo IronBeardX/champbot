@@ -244,3 +244,28 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Refreshing the corpus is a manual, dated copy; `retrieved_at` shows how stale it is, and there is no scraper to re-run.
   - `DocumentChunk` stays inside `knowledge/ingest`. Anything `chat` needs at query time moves to `common/vector_store/domain` in IRO-180 or IRO-181, as the independence contract requires.
   - The CLI ships inside the Worker bundle like every other module, but nothing imports it, so it has no runtime cost or effect.
+
+## 19. Mock Air India schedule as a Python template in `common/flights`
+
+- **Context**: ChampBot needs flight search before a real airline API exists, visible on the live URL through `GET /flights` even if the chat integration (IRO-183) slips past its cut line. Search must answer for any date, return stable fares for the same query, and run on Python Workers with no storage or extra bindings.
+- **Decision**:
+  - A new general module `common/flights`: `Flight`/`Cabin` value objects and a `FlightSearch` interface in `domain`, a `ScheduleTemplateFlightSearch` adapter in `infrastructure`, and `GET /flights` in `presentation`. It sits under `common`, not under the `chat` domain, because `/chat` will reach the same interface later.
+  - The schedule is a weekly template written as Python literals in `infrastructure/schedule_template.py`: 24 one-way Air India flights over DEL, BOM, BLR, MAA, CCU, HYD, DXB, LHR, JFK and SIN, each with local times, an arrival day offset, operating weekdays, and economy/business base fares in INR. The adapter applies it to whatever date is requested.
+  - Fares vary by date through a multiplier from 0.80 to 1.30 taken from the first two bytes of `sha256("{flight_number}|{iso_date}")`. One multiplier per flight-and-date applies to every cabin, and fares round to 10 INR with integer arithmetic. No clock, no randomness: the same query always returns the same fares.
+  - Only malformed input is a 422: a missing parameter, an airport code that isn't three uppercase letters, or a date that isn't `YYYY-MM-DD` or doesn't exist. A well-formed query with no flights — an airport outside the network, an unserved weekday, or origin equal to destination — is a 200 with an empty list.
+  - No `application` layer: the route forwards validated parameters to the interface and serializes the result, as `/chat` already does.
+  - `common/flights` is the second general module besides `core`, so an `independence` contract between `champbot.common.llm` and `champbot.common.flights` is added, and `champbot.common.flights` joins the forbidden targets of the `core` contract.
+- **Alternatives**:
+  - A JSON or CSV schedule file: Python Workers cannot read non-`.py` files under `src/` at runtime (decision 17).
+  - A fixed list of dated flights: it cannot answer an arbitrary date.
+  - Python's built-in `hash()` for fares: it is salted per process, so each Worker isolate would quote different fares for the same query.
+  - A day-of-week or day-of-year multiplier: every flight would move in lockstep, and the same weekday would always cost the same.
+  - A separate hash per cabin: economy could end up dearer than business on the same flight by chance.
+  - Restricting airport codes to an enum of the ten served airports: an unknown but valid code is a search with no results, not a malformed request.
+  - Placing the module in `chat`: a non-chat caller such as `GET /flights` could not use it without breaking the sibling rule.
+- **Consequences**:
+  - The network, times and fares are invented and only plausible. Editing them is a diff to one Python module, and a broken template fails at import, in CI.
+  - Times are naive local times at each airport. There are no time zones, so durations are not derived from them.
+  - A real flight API later is a new adapter in `common/flights/infrastructure`, picked in `dependencies.py`; callers and the interface stay unchanged.
+  - Overnight flights departing on 9999-12-31 are omitted, because their arrival date cannot be represented.
+  - Each new general module is added by hand to the `independence` contract and to the `core` contract's forbidden targets.

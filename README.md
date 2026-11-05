@@ -54,6 +54,12 @@ curl localhost:8000/chat -H 'content-type: application/json' -d '{"message": "An
 | 504 | Gemini does not answer within 25 seconds | Fixed message in `detail` |
 | 500 | Configuration error: `GEMINI_API_KEY` or `GEMINI_MODEL` is missing; the server log names the variable. Other unexpected errors return Starlette's plain-text 500 | Fixed message in `detail` |
 
+```sh
+curl 'localhost:8000/flights?origin=DEL&destination=LHR&date=2026-11-09'
+```
+
+`GET /flights` takes `origin`, `destination` (3-letter airport codes, e.g. `DEL`, `LHR`) and `date` (`YYYY-MM-DD`), all required, and returns a JSON array of flights sorted by departure: `flight_number`, `origin`, `destination`, ISO `departure`/`arrival`, a `fares` object keyed by `economy`/`business`, and `currency`. The schedule is a mock Air India network over 10 airports (DEL, BOM, BLR, MAA, CCU, HYD, DXB, LHR, JFK, SIN), generated for any date with fares that vary deterministically by date. A well-formed query with no matching flights — an airport outside the network, a route or weekday it doesn't fly, or the same origin and destination — returns `200` with `[]`, never an error; only malformed input (a bad airport code shape or an invalid/malformed date) returns 422.
+
 ### On the Workers runtime
 
 Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter, with Workers Static Assets serving the frontend. This is the full local stack, including the chat UI; it is slower to start than uvicorn, so use it to check platform behavior, not for day-to-day backend development.
