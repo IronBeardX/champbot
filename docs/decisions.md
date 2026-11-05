@@ -198,8 +198,8 @@ Every meaningful technical decision, newest last. Each entry records the context
 - **Consequences**:
   - Every turn resends the whole conversation, so input tokens grow with each turn until the client hits the limits. 40 000 characters is roughly 10 000 tokens per request at most.
   - The client controls the history, including assistant turns, and can fabricate them. That is harmless while the user is the only party, but anything the server must trust later (for example flight results it appended) cannot be taken back from `history` without being re-derived or verified on the server.
-  - The frontend has to keep the conversation and send it. Until it does, it stays single-turn and still works, because `history` defaults to `[]`.
-  - Changing a limit only touches the constants in `chat/answer/presentation/serializers.py`, the README and this entry.
+  - The frontend has to keep the conversation and send it. Until it does, it stays single-turn and still works, because `history` defaults to `[]`. IRO-172 added that: it keeps the conversation and windows it client-side in `frontend/public/history.js`, mirroring these same limits.
+  - Changing a limit now touches the constants in both `chat/answer/presentation/serializers.py` and `frontend/public/history.js`, both READMEs, and this entry.
 
 ## 17. Prompts as Python modules in `chat/common/domain`
 
