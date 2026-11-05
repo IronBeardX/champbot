@@ -54,6 +54,7 @@ button {
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
   background: #eee;
+  color: #1b1f24;
 }
 
 .turn.user {
