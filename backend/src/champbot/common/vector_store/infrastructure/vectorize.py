@@ -1,5 +1,6 @@
 import asyncio
 import json
+from typing import Any
 
 import httpx
 
@@ -7,7 +8,12 @@ from champbot.common.core.infrastructure.cloudflare import (
     CLOUDFLARE_API_BASE,
     describe_cloudflare_errors,
 )
-from champbot.common.vector_store.domain.store import Chunk, VectorStoreError
+from champbot.common.vector_store.domain.store import (
+    Chunk,
+    ScoredChunk,
+    VectorStoreError,
+    VectorStoreTimeoutError,
+)
 
 _MAX_VECTORS_PER_REQUEST = 1000
 _REQUEST_TIMEOUT_SECONDS = 60.0
@@ -34,8 +40,25 @@ class VectorizeStore:
             mutation_ids.append(await self._upsert_batch(batch))
         return mutation_ids
 
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]:
+        response = await self._post(
+            "query",
+            content=json.dumps(
+                {"vector": vector, "topK": top_k, "returnValues": False, "returnMetadata": "all"}
+            ),
+            content_type="application/json",
+        )
+        if response.is_error:
+            raise VectorStoreError(
+                f"Vectorize returned HTTP {response.status_code} "
+                f"({describe_cloudflare_errors(response)})"
+            )
+        return _extract_matches(response)
+
     async def _upsert_batch(self, batch: list[Chunk]) -> str:
-        response = await self._post_upsert(_to_ndjson(batch))
+        response = await self._post(
+            "upsert", content=_to_ndjson(batch), content_type="application/x-ndjson"
+        )
         if response.is_error:
             raise VectorStoreError(
                 f"Vectorize returned HTTP {response.status_code} "
@@ -43,10 +66,10 @@ class VectorizeStore:
             )
         return _extract_mutation_id(response)
 
-    async def _post_upsert(self, body: str) -> httpx.Response:
+    async def _post(self, action: str, *, content: str, content_type: str) -> httpx.Response:
         url = (
             f"{CLOUDFLARE_API_BASE}/accounts/{self._account_id}"
-            f"/vectorize/v2/indexes/{self._index_name}/upsert"
+            f"/vectorize/v2/indexes/{self._index_name}/{action}"
         )
         try:
             async with asyncio.timeout(self._timeout_seconds):
@@ -54,13 +77,13 @@ class VectorizeStore:
                     url,
                     headers={
                         "Authorization": f"Bearer {self._api_token}",
-                        "Content-Type": "application/x-ndjson",
+                        "Content-Type": content_type,
                     },
-                    content=body,
+                    content=content,
                     timeout=self._timeout_seconds,
                 )
         except (TimeoutError, httpx.TimeoutException) as error:
-            raise VectorStoreError("Vectorize did not answer in time") from error
+            raise VectorStoreTimeoutError("Vectorize did not answer in time") from error
         except (httpx.HTTPError, httpx.InvalidURL) as error:
             raise VectorStoreError(f"Could not reach Vectorize: {error!r}") from error
 
@@ -85,3 +108,23 @@ def _extract_mutation_id(response: httpx.Response) -> str:
     if not isinstance(mutation_id, str) or not mutation_id:
         raise VectorStoreError("Vectorize returned no mutation id")
     return mutation_id
+
+
+def _extract_matches(response: httpx.Response) -> list[ScoredChunk]:
+    try:
+        matches: list[Any] = response.json()["result"]["matches"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise VectorStoreError("Vectorize returned an unparseable response") from error
+
+    scored_chunks: list[ScoredChunk] = []
+    for match in matches:
+        try:
+            metadata = {
+                key: value for key, value in match["metadata"].items() if isinstance(value, str)
+            }
+            scored_chunks.append(
+                ScoredChunk(id=match["id"], score=float(match["score"]), metadata=metadata)
+            )
+        except (KeyError, TypeError, ValueError) as error:
+            raise VectorStoreError("Vectorize returned an unparseable match") from error
+    return scored_chunks

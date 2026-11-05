@@ -11,9 +11,21 @@ class Chunk:
     metadata: dict[str, str]
 
 
+@dataclass(frozen=True)
+class ScoredChunk:
+    id: str
+    score: float
+    metadata: dict[str, str]
+
+
 class VectorStore(Protocol):
     async def upsert(self, chunks: list[Chunk]) -> list[str]: ...
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]: ...
 
 
 class VectorStoreError(ChampBotError):
+    pass
+
+
+class VectorStoreTimeoutError(VectorStoreError):
     pass

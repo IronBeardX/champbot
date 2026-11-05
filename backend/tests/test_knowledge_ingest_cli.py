@@ -5,7 +5,12 @@ from pathlib import Path
 import pytest
 
 from champbot.common.embeddings.domain.embedder import Embedder, EmbeddingError
-from champbot.common.vector_store.domain.store import Chunk, VectorStore, VectorStoreError
+from champbot.common.vector_store.domain.store import (
+    Chunk,
+    ScoredChunk,
+    VectorStore,
+    VectorStoreError,
+)
 from champbot.knowledge.ingest.presentation.cli import OpenPorts, main
 from champbot.knowledge.ingest.presentation.dependencies import IngestPorts
 
@@ -41,12 +46,18 @@ class FakeVectorStore:
     async def upsert(self, chunks: list[Chunk]) -> list[str]:
         return ["mutation-1"]
 
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]:
+        raise NotImplementedError
+
 
 class FailingVectorStore:
     def __init__(self, error: VectorStoreError) -> None:
         self._error = error
 
     async def upsert(self, chunks: list[Chunk]) -> list[str]:
+        raise self._error
+
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]:
         raise self._error
 
 

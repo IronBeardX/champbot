@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from champbot.common.embeddings.domain.embedder import EmbeddingError
-from champbot.common.vector_store.domain.store import Chunk
+from champbot.common.vector_store.domain.store import Chunk, ScoredChunk
 from champbot.knowledge.ingest.application.ingest import ingest_chunks
 from champbot.knowledge.ingest.domain.chunker import DocumentChunk
 
@@ -36,6 +36,9 @@ class FakeVectorStore:
     async def upsert(self, chunks: list[Chunk]) -> list[str]:
         self.upserted = chunks
         return self._mutation_ids
+
+    async def query(self, vector: list[float], top_k: int) -> list[ScoredChunk]:
+        raise NotImplementedError
 
 
 def make_chunk(suffix: int) -> DocumentChunk:
