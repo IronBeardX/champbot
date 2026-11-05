@@ -1,8 +1,10 @@
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from datetime import UTC, date, datetime
 
 from fastapi import Request
 
+from champbot.chat.answer.application.flight_results import today_in_ist
 from champbot.chat.answer.infrastructure.settings import load_retrieval_settings
 from champbot.common.core.infrastructure.cloudflare import load_cloudflare_settings
 from champbot.common.core.infrastructure.http_client import open_http_client
@@ -54,3 +56,7 @@ async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts
 
 def get_min_score(request: Request) -> float:
     return load_retrieval_settings(request.scope.get("env")).min_score
+
+
+def get_today() -> date:
+    return today_in_ist(datetime.now(UTC))

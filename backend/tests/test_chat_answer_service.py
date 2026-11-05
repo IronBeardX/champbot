@@ -1,10 +1,12 @@
 import asyncio
 import json
 from collections.abc import Mapping
+from datetime import date, datetime
 from typing import Any
 
 import pytest
 
+from champbot.chat.answer.application.flight_results import render_flights_prompt
 from champbot.chat.answer.application.services import (
     PolicySource,
     answer_chat,
@@ -18,9 +20,12 @@ from champbot.chat.answer.domain.structured_answer import STRUCTURED_ANSWER_SCHE
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT
 from champbot.chat.common.domain.routing_prompt import ROUTING_PROMPT
+from champbot.common.flights.domain.flight import Cabin, Flight
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import LLMUnavailableError
 from champbot.common.vector_store.domain.store import Chunk, ScoredChunk
+
+FIXED_TODAY = date(2026, 11, 5)
 
 
 class FakeProvider:
@@ -29,11 +34,13 @@ class FakeProvider:
         answer: str = "ok",
         *,
         intent: str = "general",
+        flight_query: Mapping[str, Any] | None = None,
         source_ids: list[int] | None = None,
         raw: str | None = None,
     ) -> None:
         self.answer = answer
         self.intent = intent
+        self.flight_query = flight_query
         self.source_ids = source_ids if source_ids is not None else []
         self.raw = raw
         self.calls: list[tuple[list[Message], str | None]] = []
@@ -51,8 +58,23 @@ class FakeProvider:
         if self.raw is not None:
             return self.raw
         return json.dumps(
-            {"intent": self.intent, "answer": self.answer, "source_ids": self.source_ids}
+            {
+                "intent": self.intent,
+                "flight_query": self.flight_query,
+                "answer": self.answer,
+                "source_ids": self.source_ids,
+            }
         )
+
+
+class FakeFlightSearch:
+    def __init__(self, flights: list[Flight] | None = None) -> None:
+        self.flights = flights if flights is not None else []
+        self.calls: list[tuple[str, str, date]] = []
+
+    async def search(self, origin: str, destination: str, departure_date: date) -> list[Flight]:
+        self.calls.append((origin, destination, departure_date))
+        return self.flights
 
 
 class FakeEmbedder:
@@ -224,11 +246,14 @@ def test_cited_sources_numbering_skips_chunks_usable_chunks_dropped() -> None:
 
 
 def test_parse_structured_answer_parses_a_valid_payload() -> None:
-    raw = json.dumps({"intent": "policy", "answer": "23kg.", "source_ids": [1]})
+    raw = json.dumps(
+        {"intent": "policy", "flight_query": None, "answer": "23kg.", "source_ids": [1]}
+    )
 
     parsed = parse_structured_answer(raw)
 
     assert parsed.intent == "policy"
+    assert parsed.flight_query is None
     assert parsed.answer == "23kg."
     assert parsed.source_ids == [1]
 
@@ -256,7 +281,15 @@ def test_answer_chat_prepends_rag_context_to_the_persona() -> None:
     messages = [Message(Role.USER, "What is the baggage allowance?")]
 
     result = asyncio.run(
-        answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore(chunks), min_score=0.0)
+        answer_chat(
+            messages,
+            provider,
+            FakeEmbedder(),
+            FakeVectorStore(chunks),
+            flight_search=FakeFlightSearch(),
+            min_score=0.0,
+            today=FIXED_TODAY,
+        )
     )
 
     assert len(provider.calls) == 1
@@ -265,12 +298,17 @@ def test_answer_chat_prepends_rag_context_to_the_persona() -> None:
     assert system_instruction is not None
     assert system_instruction.startswith(ASSISTANT_SYSTEM_PROMPT)
     assert ROUTING_PROMPT in system_instruction
+    assert render_flights_prompt(FIXED_TODAY) in system_instruction
+    assert system_instruction.index(ROUTING_PROMPT) < system_instruction.index(
+        render_flights_prompt(FIXED_TODAY)
+    )
     assert "[1] Baggage" in system_instruction
     assert "baggage body" in system_instruction
     assert provider.response_schemas == [STRUCTURED_ANSWER_SCHEMA]
     assert result.intent == "policy"
     assert result.answer == "Here is the policy."
     assert result.sources == [PolicySource(title="Baggage", url=chunks[0].metadata["source_url"])]
+    assert result.flights == []
 
 
 def test_answer_chat_uses_no_policy_context_when_nothing_kept() -> None:
@@ -278,7 +316,15 @@ def test_answer_chat_uses_no_policy_context_when_nothing_kept() -> None:
     messages = [Message(Role.USER, "What is the baggage allowance?")]
 
     result = asyncio.run(
-        answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore([]), min_score=0.5)
+        answer_chat(
+            messages,
+            provider,
+            FakeEmbedder(),
+            FakeVectorStore([]),
+            flight_search=FakeFlightSearch(),
+            min_score=0.5,
+            today=FIXED_TODAY,
+        )
     )
 
     _, system_instruction = provider.calls[0]
@@ -296,7 +342,15 @@ def test_answer_chat_never_derives_sources_from_the_model_answer() -> None:
     messages = [Message(Role.USER, "What is the baggage allowance?")]
 
     result = asyncio.run(
-        answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore(chunks), min_score=0.5)
+        answer_chat(
+            messages,
+            provider,
+            FakeEmbedder(),
+            FakeVectorStore(chunks),
+            flight_search=FakeFlightSearch(),
+            min_score=0.5,
+            today=FIXED_TODAY,
+        )
     )
 
     assert result.sources == []
@@ -308,7 +362,75 @@ def test_answer_chat_raises_unavailable_error_on_invalid_structured_answer() -> 
 
     with pytest.raises(LLMUnavailableError) as error:
         asyncio.run(
-            answer_chat(messages, provider, FakeEmbedder(), FakeVectorStore([]), min_score=0.5)
+            answer_chat(
+                messages,
+                provider,
+                FakeEmbedder(),
+                FakeVectorStore([]),
+                flight_search=FakeFlightSearch(),
+                min_score=0.5,
+                today=FIXED_TODAY,
+            )
         )
 
     assert error.value.__cause__ is None
+
+
+def test_answer_chat_does_not_search_when_intent_is_not_flight_search() -> None:
+    provider = FakeProvider(
+        answer="Economy gets 23kg.",
+        intent="policy",
+        flight_query={"origin": "DEL", "destination": "LHR", "date": "2026-11-06"},
+    )
+    messages = [Message(Role.USER, "What is the baggage allowance?")]
+    flight_search = FakeFlightSearch()
+
+    result = asyncio.run(
+        answer_chat(
+            messages,
+            provider,
+            FakeEmbedder(),
+            FakeVectorStore([]),
+            flight_search=flight_search,
+            min_score=0.5,
+            today=FIXED_TODAY,
+        )
+    )
+
+    assert flight_search.calls == []
+    assert result.answer == "Economy gets 23kg."
+    assert result.flights == []
+
+
+def test_answer_chat_searches_and_appends_flights_for_a_complete_flight_query() -> None:
+    flight = Flight(
+        flight_number="AI 111",
+        origin="DEL",
+        destination="LHR",
+        departure=datetime(2026, 11, 6, 13, 30),
+        arrival=datetime(2026, 11, 6, 18, 20),
+        fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
+    )
+    provider = FakeProvider(
+        answer="Flights from Delhi to London on Friday 6 November 2026:",
+        intent="flight_search",
+        flight_query={"origin": "DEL", "destination": "LHR", "date": "2026-11-06"},
+    )
+    messages = [Message(Role.USER, "Flights from Delhi to London next Friday")]
+    flight_search = FakeFlightSearch([flight])
+
+    result = asyncio.run(
+        answer_chat(
+            messages,
+            provider,
+            FakeEmbedder(),
+            FakeVectorStore([]),
+            flight_search=flight_search,
+            min_score=0.5,
+            today=FIXED_TODAY,
+        )
+    )
+
+    assert flight_search.calls == [("DEL", "LHR", date(2026, 11, 6))]
+    assert result.flights == [flight]
+    assert "AI 111" in result.answer

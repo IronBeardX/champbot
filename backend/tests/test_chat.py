@@ -1,21 +1,27 @@
 import json
 from collections.abc import Callable, Mapping
+from datetime import date, datetime
 from typing import Any
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from champbot.chat.answer.application.flight_results import render_flights_prompt
 from champbot.chat.answer.presentation.dependencies import (
     RetrievalPorts,
     get_llm_provider,
     get_min_score,
     get_retrieval_ports,
+    get_today,
 )
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT, RAG_PROMPT
 from champbot.chat.common.domain.routing_prompt import ROUTING_PROMPT
 from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
+from champbot.common.flights.domain.flight import Cabin, Flight
+from champbot.common.flights.domain.search import FlightSearch
+from champbot.common.flights.presentation.dependencies import get_flight_search
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import (
     LLMError,
@@ -34,8 +40,10 @@ from champbot.main import create_app
 
 INTERNAL_DETAIL = "upstream said: secret internals"
 USER_MESSAGE = "Where is my lost suitcase?"
+FIXED_TODAY = date(2026, 11, 5)
 NO_CONTEXT_SYSTEM_INSTRUCTION = (
-    f"{ASSISTANT_SYSTEM_PROMPT}\n{ROUTING_PROMPT}\n{RAG_PROMPT.format(context=NO_POLICY_CONTEXT)}"
+    f"{ASSISTANT_SYSTEM_PROMPT}\n{ROUTING_PROMPT}\n{render_flights_prompt(FIXED_TODAY)}\n"
+    f"{RAG_PROMPT.format(context=NO_POLICY_CONTEXT)}"
 )
 
 
@@ -46,11 +54,13 @@ class FakeProvider:
         error: LLMError | None = None,
         *,
         intent: str = "general",
+        flight_query: Mapping[str, Any] | None = None,
         source_ids: list[int] | None = None,
     ) -> None:
         self.answer = answer
         self.error = error
         self.intent = intent
+        self.flight_query = flight_query
         self.source_ids = source_ids if source_ids is not None else []
         self.calls: list[tuple[list[Message], str | None]] = []
 
@@ -65,8 +75,21 @@ class FakeProvider:
         if self.error is not None:
             raise self.error
         return json.dumps(
-            {"intent": self.intent, "answer": self.answer, "source_ids": self.source_ids}
+            {
+                "intent": self.intent,
+                "flight_query": self.flight_query,
+                "answer": self.answer,
+                "source_ids": self.source_ids,
+            }
         )
+
+
+class FakeFlightSearch:
+    def __init__(self, flights: list[Flight] | None = None) -> None:
+        self.flights = flights if flights is not None else []
+
+    async def search(self, origin: str, destination: str, departure_date: date) -> list[Flight]:
+        return self.flights
 
 
 class FakeEmbedder:
@@ -128,7 +151,9 @@ def client_with(
     chunks: list[ScoredChunk] | None = None,
     embedder: FakeEmbedder | None = None,
     vector_store: FakeVectorStore | None = None,
+    flight_search: FlightSearch | None = None,
     min_score: float = 0.5,
+    today: date = FIXED_TODAY,
 ) -> TestClient:
     app = create_app()
     ports = RetrievalPorts(
@@ -138,6 +163,10 @@ def client_with(
     app.dependency_overrides[get_llm_provider] = lambda: provider
     app.dependency_overrides[get_retrieval_ports] = lambda: ports
     app.dependency_overrides[get_min_score] = lambda: min_score
+    app.dependency_overrides[get_flight_search] = (
+        lambda: flight_search if flight_search is not None else FakeFlightSearch()
+    )
+    app.dependency_overrides[get_today] = lambda: today
     return TestClient(app)
 
 
@@ -151,6 +180,7 @@ def test_returns_provider_answer_for_the_message() -> None:
         "intent": "general",
         "answer": "Yes, you can change it online.",
         "sources": [],
+        "flights": [],
     }
     assert provider.calls == [
         ([Message(Role.USER, "  Can I change my flight?")], NO_CONTEXT_SYSTEM_INSTRUCTION)
@@ -164,6 +194,48 @@ def test_returns_the_intent_the_provider_chose() -> None:
 
     assert response.status_code == 200
     assert response.json()["intent"] == "flight_search"
+
+
+def test_flight_turn_returns_flights_in_the_flight_response_shape() -> None:
+    flight = Flight(
+        flight_number="AI 111",
+        origin="DEL",
+        destination="LHR",
+        departure=datetime(2026, 11, 6, 13, 30),
+        arrival=datetime(2026, 11, 6, 18, 20),
+        fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
+    )
+    provider = FakeProvider(
+        answer="Flights from Delhi to London on Friday 6 November 2026:",
+        intent="flight_search",
+        flight_query={"origin": "DEL", "destination": "LHR", "date": "2026-11-06"},
+    )
+
+    response = client_with(provider, flight_search=FakeFlightSearch([flight])).post(
+        "/chat", json={"message": "Flights from Delhi to London next Friday"}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["flights"] == [
+        {
+            "flight_number": "AI 111",
+            "origin": "DEL",
+            "destination": "LHR",
+            "departure": "2026-11-06T13:30:00",
+            "arrival": "2026-11-06T18:20:00",
+            "fares": {"economy": 48000, "business": 180000},
+            "currency": "INR",
+        }
+    ]
+
+
+def test_non_flight_turn_returns_an_empty_flights_list() -> None:
+    provider = FakeProvider(answer="Hi there!", intent="general")
+
+    response = client_with(provider).post("/chat", json={"message": "hello"})
+
+    assert response.status_code == 200
+    assert response.json()["flights"] == []
 
 
 def test_sends_the_assistant_prompt_as_system_instruction() -> None:

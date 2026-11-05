@@ -51,7 +51,7 @@ def test_parses_a_flight_query_with_every_field_null() -> None:
 
 @pytest.mark.parametrize("slot", ["origin", "destination"])
 def test_parses_unsupported_in_either_slot(slot: str) -> None:
-    query = {"origin": None, "destination": None, "date": None}
+    query: dict[str, object] = {"origin": None, "destination": None, "date": None}
     query[slot] = "UNSUPPORTED"
     payload = json.dumps(
         {

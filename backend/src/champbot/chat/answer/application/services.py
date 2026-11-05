@@ -1,8 +1,14 @@
 import logging
 from dataclasses import dataclass
+from datetime import date
 
 from pydantic import ValidationError
 
+from champbot.chat.answer.application.flight_results import (
+    FlightReply,
+    answer_flight_query,
+    render_flights_prompt,
+)
 from champbot.chat.answer.application.retrieval import DEFAULT_TOP_K, retrieve_policy_chunks
 from champbot.chat.answer.domain.structured_answer import (
     STRUCTURED_ANSWER_SCHEMA,
@@ -13,6 +19,8 @@ from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT, RAG_CHUNK, RAG_PROMPT
 from champbot.chat.common.domain.routing_prompt import ROUTING_PROMPT
 from champbot.common.embeddings.domain.embedder import Embedder
+from champbot.common.flights.domain.flight import Flight
+from champbot.common.flights.domain.search import FlightSearch
 from champbot.common.llm.domain.message import Message, Role
 from champbot.common.llm.domain.provider import LLMProvider, LLMUnavailableError
 from champbot.common.vector_store.domain.store import ScoredChunk, VectorStore
@@ -31,6 +39,7 @@ class ChatAnswer:
     intent: Intent
     answer: str
     sources: list[PolicySource]
+    flights: list[Flight]
 
 
 async def answer_chat(
@@ -39,7 +48,9 @@ async def answer_chat(
     embedder: Embedder,
     vector_store: VectorStore,
     *,
+    flight_search: FlightSearch,
     min_score: float,
+    today: date,
     top_k: int = DEFAULT_TOP_K,
 ) -> ChatAnswer:
     query_text = build_retrieval_query(messages)
@@ -49,16 +60,22 @@ async def answer_chat(
     usable = usable_chunks(chunks)
     context = render_policy_context(usable)
     system_instruction = (
-        f"{ASSISTANT_SYSTEM_PROMPT}\n{ROUTING_PROMPT}\n{RAG_PROMPT.format(context=context)}"
+        f"{ASSISTANT_SYSTEM_PROMPT}\n{ROUTING_PROMPT}\n{render_flights_prompt(today)}\n"
+        f"{RAG_PROMPT.format(context=context)}"
     )
     raw = await provider.generate(
         messages, system_instruction, response_schema=STRUCTURED_ANSWER_SCHEMA
     )
     parsed = parse_structured_answer(raw)
+    if parsed.intent == "flight_search":
+        reply = await answer_flight_query(parsed.answer, parsed.flight_query, flight_search, today)
+    else:
+        reply = FlightReply(parsed.answer, [])
     return ChatAnswer(
         intent=parsed.intent,
-        answer=parsed.answer,
+        answer=reply.answer,
         sources=cited_sources(usable, parsed.source_ids),
+        flights=reply.flights,
     )
 
 
