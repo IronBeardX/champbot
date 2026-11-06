@@ -1,6 +1,18 @@
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+  color-scheme: only light;
+
+  --color-bg: #ffffff;
+  --color-surface: #eeeeee;
+  --color-text: #1b1f24;
+  --color-text-muted: #666666;
+  --color-intent-text: #555555;
+  --color-accent: #0b4f9c;
+  --color-user-bg: #dbe7f5;
+  --color-user-failed-bg: #fbeaea;
+  --color-error-bg: #fde2e2;
+  --color-error-text: #7a1f1f;
+
+  --font-sans: system-ui, sans-serif;
 }
 
 body {
@@ -8,6 +20,9 @@ body {
   padding: 1rem;
   max-width: 40rem;
   margin-inline: auto;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
 }
 
 main {
@@ -53,32 +68,32 @@ button {
   max-width: 85%;
   padding: 0.5rem 0.75rem;
   border-radius: 0.5rem;
-  background: #eee;
-  color: #1b1f24;
+  background: var(--color-surface);
+  color: var(--color-text);
 }
 
 .turn.user {
   align-self: flex-end;
-  background: #dbe7f5;
+  background: var(--color-user-bg);
 }
 
 .turn.pending {
-  color: #666;
+  color: var(--color-text-muted);
 }
 
 .turn.error {
-  background: #fde2e2;
-  color: #7a1f1f;
+  background: var(--color-error-bg);
+  color: var(--color-error-text);
 }
 
 .turn.user.failed {
-  background: #fbeaea;
+  background: var(--color-user-failed-bg);
 }
 
 .turn .intent {
   display: block;
   font-size: 0.75rem;
-  color: #555;
+  color: var(--color-intent-text);
   margin-bottom: 0.25rem;
 }
 
@@ -94,13 +109,13 @@ button {
 }
 
 .turn a {
-  color: #0b4f9c;
+  color: var(--color-accent);
   overflow-wrap: anywhere;
 }
 
 footer {
   margin-top: 2rem;
   font-size: 0.85rem;
-  color: #666;
+  color: var(--color-text-muted);
   text-align: center;
 }
