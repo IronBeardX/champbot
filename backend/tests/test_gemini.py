@@ -680,9 +680,7 @@ def test_second_attempt_gets_only_the_time_left_on_the_shared_deadline() -> None
         if calls == 1:
             await asyncio.sleep(0.05)
             return httpx.Response(503, json={"error": {"status": "UNAVAILABLE"}})
-        return httpx.Response(
-            200, json={"candidates": [{"content": {"parts": [{"text": "Hi"}]}}]}
-        )
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "Hi"}]}}]})
 
     provider = GeminiProvider(
         "test-key",
