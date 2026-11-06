@@ -382,3 +382,17 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Recoloring the UI is a diff to the `:root` block alone; `grep -nE '#[0-9a-fA-F]{3,6}' frontend/public/styles.css` outside that block catches drift.
   - Hindi rendering depends on the visitor's OS fonts; current desktop and mobile OSes all ship one of the listed faces, though a minimal Linux install without Noto may fall back further.
   - Adding dark mode later means a `prefers-color-scheme: dark` block overriding the same tokens, plus changing `color-scheme`.
+
+## 25. Groq as a second, switchable LLM provider
+
+- **Context**: decision 3 picked Gemini as the sole LLM behind the provider interface and rejected Groq for RAG because its free-tier throughput (12K tokens per minute) looked too low for RAG-sized prompts. During development the owner's Gemini free-tier quota ran out, stalling local testing and demoing.
+- **Decision**: add `GroqProvider`, a second implementation of the same `LLMProvider` interface, calling Groq's OpenAI-compatible chat completions endpoint over httpx the same way `GeminiProvider` calls Gemini's REST endpoint (decision 12). Which provider answers `/chat` is chosen by a new required `LLM_PROVIDER` setting (`gemini` or `groq`), read once per request in `get_llm_provider`; nothing else in the application depends on which provider is active. `GEMINI_GENERATE_CONTENT_URL` and `GROQ_GENERATE_CONTENT_URL` move each provider's endpoint into configuration instead of a hardcoded constant, for the same reason the model id already was.
+- **Alternatives**:
+  - Waiting out Gemini's quota reset: blocks development and demoing with no fixed reset time visible from the free tier.
+  - Picking Groq over Gemini outright: discarded for the same RAG-throughput reason as decision 3 — not revisited here.
+  - Selecting the provider per request (e.g. a query parameter from the frontend, tried and reverted during this change): rejected; which LLM backs `/chat` is operational configuration, not something a client of the chat should control, and it would need validating an untrusted value on every request instead of once at startup.
+- **Consequences**:
+  - Decision 3's throughput concern for Groq on RAG-sized prompts was not re-measured here. Groq is a practical fallback for when Gemini's quota is exhausted, not a verified replacement for Gemini under the prompt sizes decision 21's retrieval produces; hitting Groq's own free-tier limits under those prompts is an open risk, to watch for while both providers are in use.
+  - Error messages, the reasoning/thinking setting and role mapping stay separate per provider rather than unified under one schema, because Gemini's `generateContent` and Groq's OpenAI-compatible chat completions have different request and response shapes.
+  - `test_groq.py` and `test_groq_settings.py` mirror `GeminiProvider`'s test suite, all through `httpx.MockTransport`; no test calls either provider over the network, so the test suite never spends either provider's quota.
+  - Switching providers in production means setting `LLM_PROVIDER` plus that provider's own settings in `backend/wrangler.jsonc` and `GROQ_API_KEY`/`GEMINI_API_KEY` as a Worker secret; the other provider's secret can stay unset.
