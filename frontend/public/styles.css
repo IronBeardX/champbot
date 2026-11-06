@@ -31,6 +31,23 @@ main {
   gap: 1rem;
 }
 
+.site-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.site-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.disclaimer {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 form {
   display: flex;
   flex-direction: column;
@@ -111,11 +128,4 @@ button {
 .turn a {
   color: var(--color-accent);
   overflow-wrap: anywhere;
-}
-
-footer {
-  margin-top: 2rem;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-  text-align: center;
 }
