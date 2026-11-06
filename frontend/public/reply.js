@@ -11,17 +11,37 @@ export const INTENT_LABELS = {
 
 const UNEXPECTED_RESPONSE_MESSAGE = "Unexpected response from the server.";
 
+export const TIMEOUT_MESSAGE = "The assistant took too long to answer. Try again.";
+
 const FIXED_STATUS_MESSAGES = {
   422: "Message must be 1-2000 characters and not blank.",
   502: "The assistant is unavailable right now. Try again shortly.",
-  504: "The assistant took too long to answer. Try again.",
+  504: TIMEOUT_MESSAGE,
   500: "Something went wrong on the server. Try again later.",
 };
 
+export function retryAfterSeconds(response) {
+  const raw = response.headers.get("Retry-After");
+  if (raw === null || raw.trim() === "") {
+    return null;
+  }
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  return Math.ceil(seconds);
+}
+
+export function failureMessage(error) {
+  if (error instanceof DOMException && error.name === "TimeoutError") {
+    return TIMEOUT_MESSAGE;
+  }
+  return NETWORK_ERROR_MESSAGE;
+}
+
 function rateLimitMessage(response) {
-  const retryAfter = response.headers.get("Retry-After");
-  const seconds = retryAfter === null ? Number.NaN : Number(retryAfter);
-  if (retryAfter !== null && retryAfter.trim() !== "" && Number.isFinite(seconds)) {
+  const seconds = retryAfterSeconds(response);
+  if (seconds !== null) {
     return `Too many requests. Try again in ${seconds} s.`;
   }
   return "Too many requests. Try again shortly.";
@@ -77,7 +97,7 @@ export async function readReply(response) {
     return readAnswer(response);
   }
   if (response.status === 429) {
-    return { error: rateLimitMessage(response) };
+    return { error: rateLimitMessage(response), retryAfter: retryAfterSeconds(response) };
   }
   const message = FIXED_STATUS_MESSAGES[response.status];
   if (message !== undefined) {

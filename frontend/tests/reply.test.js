@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { httpsHref, INTENT_LABELS, NETWORK_ERROR_MESSAGE, readReply } from "../public/reply.js";
+import {
+  failureMessage,
+  httpsHref,
+  INTENT_LABELS,
+  NETWORK_ERROR_MESSAGE,
+  readReply,
+  retryAfterSeconds,
+  TIMEOUT_MESSAGE,
+} from "../public/reply.js";
 
 function jsonResponse(status, body, headers) {
   return new Response(JSON.stringify(body), {
@@ -102,13 +110,37 @@ test("429 with a numeric Retry-After names the wait", async () => {
     jsonResponse(429, { detail: "slow down" }, { "Retry-After": "37" }),
   );
 
-  assert.deepEqual(reply, { error: "Too many requests. Try again in 37 s." });
+  assert.deepEqual(reply, { error: "Too many requests. Try again in 37 s.", retryAfter: 37 });
 });
 
 test("429 without Retry-After gives a generic wait", async () => {
   const reply = await readReply(jsonResponse(429, { detail: "slow down" }));
 
-  assert.deepEqual(reply, { error: "Too many requests. Try again shortly." });
+  assert.deepEqual(reply, { error: "Too many requests. Try again shortly.", retryAfter: null });
+});
+
+test("retryAfterSeconds reads a valid header, including the zero boundary", () => {
+  assert.equal(retryAfterSeconds(jsonResponse(429, {}, { "Retry-After": "37" })), 37);
+  assert.equal(retryAfterSeconds(jsonResponse(429, {}, { "Retry-After": "0" })), 0);
+});
+
+test("retryAfterSeconds rounds a fractional value up", () => {
+  assert.equal(retryAfterSeconds(jsonResponse(429, {}, { "Retry-After": "1.5" })), 2);
+});
+
+for (const header of [undefined, "", "   ", "soon", "-5"]) {
+  test(`retryAfterSeconds maps an unusable header (${JSON.stringify(header)}) to null`, () => {
+    const headers = header === undefined ? {} : { "Retry-After": header };
+    assert.equal(retryAfterSeconds(jsonResponse(429, {}, headers)), null);
+  });
+}
+
+test("failureMessage maps a TimeoutError DOMException to the timeout message", () => {
+  assert.equal(failureMessage(new DOMException("x", "TimeoutError")), TIMEOUT_MESSAGE);
+});
+
+test("failureMessage maps any other error to the network error message", () => {
+  assert.equal(failureMessage(new TypeError("Failed to fetch")), NETWORK_ERROR_MESSAGE);
 });
 
 test("502 reports the assistant is unavailable", async () => {
