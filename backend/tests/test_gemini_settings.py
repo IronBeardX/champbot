@@ -15,6 +15,7 @@ EXPECTED = GeminiSettings(
     model="test-model",
     generate_content_url="https://test.example/generate",
     thinking_level="LOW",
+    fallback_model=None,
 )
 
 BASE_VALUES = {
@@ -112,3 +113,26 @@ def test_reads_gemini_thinking_level_from_workers_env() -> None:
     workers_env = SimpleNamespace(**BASE_VALUES, GEMINI_THINKING_LEVEL="HIGH")
 
     assert load_gemini_settings(workers_env, environ={}).thinking_level == "HIGH"
+
+
+def test_reads_gemini_fallback_model_when_set() -> None:
+    environ = {**BASE_VALUES, "GEMINI_FALLBACK_MODEL": "test-fallback-model"}
+
+    assert load_gemini_settings(None, environ).fallback_model == "test-fallback-model"
+
+
+def test_reads_gemini_fallback_model_from_workers_env() -> None:
+    workers_env = SimpleNamespace(**BASE_VALUES, GEMINI_FALLBACK_MODEL="test-fallback-model")
+
+    assert load_gemini_settings(workers_env, environ={}).fallback_model == "test-fallback-model"
+
+
+@pytest.mark.parametrize("missing_value", [None, "", " \n\t "])
+def test_gemini_fallback_model_is_none_when_absent_or_blank(
+    missing_value: str | None,
+) -> None:
+    environ = dict(BASE_VALUES)
+    if missing_value is not None:
+        environ["GEMINI_FALLBACK_MODEL"] = missing_value
+
+    assert load_gemini_settings(None, environ).fallback_model is None

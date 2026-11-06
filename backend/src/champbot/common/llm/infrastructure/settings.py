@@ -12,6 +12,7 @@ from champbot.common.llm.domain.provider import ProviderEnum
 
 _LLM_PROVIDER_SETTING = "LLM_PROVIDER"
 _THINKING_LEVEL_SETTING = "GEMINI_THINKING_LEVEL"
+_FALLBACK_MODEL_SETTING = "GEMINI_FALLBACK_MODEL"
 _GROQ_REASONING_EFFORT_SETTING = "GROQ_REASONING_EFFORT"
 _DEFAULT_THINKING_LEVEL = "LOW"
 _VALID_THINKING_LEVELS = frozenset({"MINIMAL", "LOW", "MEDIUM", "HIGH"})
@@ -23,6 +24,7 @@ class GeminiSettings:
     model: str
     generate_content_url: str
     thinking_level: str
+    fallback_model: str | None
 
 
 @dataclass(frozen=True)
@@ -53,11 +55,13 @@ def load_gemini_settings(
     ).upper()
     if thinking_level not in _VALID_THINKING_LEVELS:
         raise InvalidSettingError(_THINKING_LEVEL_SETTING)
+    fallback_model = optional_setting(lookup, _FALLBACK_MODEL_SETTING, "").strip() or None
     return GeminiSettings(
         api_key=require_setting(lookup, "GEMINI_API_KEY"),
         model=require_setting(lookup, "GEMINI_MODEL"),
         generate_content_url=require_setting(lookup, "GEMINI_GENERATE_CONTENT_URL"),
         thinking_level=thinking_level,
+        fallback_model=fallback_model,
     )
 
 

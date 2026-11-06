@@ -43,6 +43,7 @@ def get_llm_provider(request: Request) -> LLMProvider:
                 settings.model,
                 settings.generate_content_url,
                 thinking_level=settings.thinking_level,
+                fallback_model=settings.fallback_model,
             )
         case ProviderEnum.GROQ:
             settings = load_groq_settings(env)
