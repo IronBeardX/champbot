@@ -2,13 +2,13 @@
 
 Air India-style airline chatbot built for the AI Champions AI Engineer (Junior) technical exercise.
 
-Open <https://champbot.alejandroyeroval.workers.dev> in a browser for the chat UI, deployed on Cloudflare Python Workers.
+Open <https://champbot-frontend.alejandroyeroval.workers.dev> in a browser for the chat UI, deployed on Cloudflare Workers.
 
 ## Repository layout
 
-- `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project.
+- `backend/`: FastAPI app, a self-contained [uv](https://docs.astral.sh/uv/) project, deployed as the `champbot` Worker.
 - `backend/data/`: the policy corpus and the retrieval eval seed, outside `src/` so they are never bundled into the Worker.
-- `frontend/`: the static chat UI, served by Workers Static Assets from `frontend/public`.
+- `frontend/`: the static chat UI, deployed as its own assets-only `champbot-frontend` Worker, independent of the backend.
 - `docs/architecture.md`: backend module layout and dependency rules.
 - `docs/decisions.md`: technical decisions and the reasons behind them.
 
@@ -62,14 +62,19 @@ curl 'localhost:8000/flights?origin=DEL&destination=LHR&date=2026-11-09'
 
 ### On the Workers runtime
 
-Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter, with Workers Static Assets serving the frontend. This is the full local stack, including the chat UI; it is slower to start than uvicorn, so use it to check platform behavior, not for day-to-day backend development.
+Runs the app the way it runs in production: on Pyodide, through the Workers ASGI adapter. This is slower to start than uvicorn, so use it to check platform behavior, not for day-to-day backend development. The backend and frontend are separate Workers, so they need two terminals:
 
 ```sh
 cd backend
 uv run pywrangler dev --env-file ../.env
 ```
 
-Open <http://localhost:8787> for the chat UI. In a second terminal:
+```sh
+cd frontend
+npx wrangler@4 dev --port 8788
+```
+
+Open <http://localhost:8788> for the chat UI; it talks to the backend at `localhost:8787`. `http://localhost:8787/` itself returns a 404 — the backend only serves the API now.
 
 ```sh
 curl localhost:8787/health
@@ -78,14 +83,16 @@ curl localhost:8787/chat -H 'content-type: application/json' -d '{"message": "Ca
 
 ## Deploy
 
-Every push to `main` deploys to <https://champbot.alejandroyeroval.workers.dev> automatically. The `deploy` job in CI runs after the checks pass. Deploys never overlap, and a newer push replaces a deploy still waiting to start. Each Cloudflare deployment is tagged with its commit SHA, so you can see which commit is live:
+Two independent Workers, each with its own CI job. Every push to `main` deploys both after the checks pass: `deploy` publishes the backend (`champbot`), then `deploy-frontend` publishes the frontend (`champbot-frontend`), so CORS is always live before the UI that depends on it. Deploys never overlap, and a newer push replaces a deploy still waiting to start. Each Cloudflare deployment is tagged with its commit SHA, so you can see which commit is live:
 
 ```sh
-cd backend
-uv run pywrangler deployments list
+cd backend && uv run pywrangler deployments list
+cd frontend && npx wrangler@4 deployments list
 ```
 
-The job only uses the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`. The Worker needs three:
+Creating either Worker for the first time is a manual, one-off step — CI only updates an existing Worker, it never creates one. `champbot` already exists; `champbot-frontend` is created once by hand (`cd frontend && npx wrangler@4 login && npx wrangler@4 deploy`, or from the Cloudflare dashboard) before its first CI deploy.
+
+The jobs only use the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets. `CLOUDFLARE_API_TOKEN` needs account-wide Workers Scripts:Edit (Workers permissions can't be scoped to one script). Runtime secrets live in Cloudflare and are set with `uv run pywrangler secret put <NAME>`. The backend Worker needs three:
 
 ```sh
 cd backend
@@ -94,27 +101,24 @@ uv run pywrangler secret put CF_RUNTIME_API_TOKEN
 uv run pywrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-The model id, the thinking level and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `GEMINI_THINKING_LEVEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code.
+The model id, the thinking level and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `GEMINI_THINKING_LEVEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code. The frontend Worker has no secrets or variables of its own.
 
-To deploy by hand, log in to Cloudflare once with `uv run pywrangler login`, then:
+To deploy by hand, log in to Cloudflare once with `wrangler login`, then:
 
 ```sh
-cd backend
-uv run pywrangler deploy
+cd backend && uv run pywrangler deploy
+cd frontend && npx wrangler@4 deploy
 ```
 
-`pywrangler` vendors the runtime dependencies from `pyproject.toml` for Pyodide and uploads them with the Worker. Check the result with:
+`pywrangler` vendors the runtime dependencies from `pyproject.toml` for Pyodide and uploads them with the backend Worker; the frontend Worker has no Python, so it deploys with plain `wrangler`. Check the result with:
 
 ```sh
 curl https://champbot.alejandroyeroval.workers.dev/health
 curl https://champbot.alejandroyeroval.workers.dev/chat -H 'content-type: application/json' -d '{"message": "Can I change my flight?"}'
+curl -i https://champbot-frontend.alejandroyeroval.workers.dev/
 ```
 
-### Preview deployments
-
-Every pull request from an `iro-<n>-...` branch gets a preview of its code at `https://iro-<n>-champbot.alejandroyeroval.workers.dev`. The `preview` job in CI uploads the branch head as a new Worker version once the checks pass, without deploying it, so production keeps serving `main`. The job keeps one comment on the pull request with the preview URL and the commit it was built from, and updates it on every push. Branches without the `iro-<n>-` prefix get no preview, and the job shows as skipped.
-
-Previews use the production secrets, so `/chat` on a preview spends the same Gemini quota. They are public, like the production URL. `wrangler tail` and Workers Logs do not see their requests.
+There is no pull request preview deployment: every change is verified by hand after it merges to `main`.
 
 ## Checks
 
