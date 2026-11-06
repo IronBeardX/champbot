@@ -1,5 +1,7 @@
 import asyncio
 import json
+import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
@@ -25,6 +27,8 @@ TEST_GENERATE_CONTENT_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 )
 
+FALLBACK_MODEL = "fallback-model"
+
 
 def generate(
     handler: Handler,
@@ -33,13 +37,21 @@ def generate(
     *,
     response_schema: Mapping[str, Any] | None = None,
     thinking_level: str | None = None,
+    fallback_model: str | None = None,
+    retry_delay: Callable[[], float] = lambda: 0.0,
+    min_retry_seconds: float = 8.0,
+    timeout_seconds: float = 25.0,
 ) -> str:
     provider = GeminiProvider(
         "test-key",
         "test-model",
         TEST_GENERATE_CONTENT_URL,
         transport=httpx.MockTransport(handler),
+        timeout_seconds=timeout_seconds,
         thinking_level=thinking_level,
+        fallback_model=fallback_model,
+        retry_delay=retry_delay,
+        min_retry_seconds=min_retry_seconds,
     )
     return asyncio.run(
         provider.generate(list(messages), system_instruction, response_schema=response_schema)
@@ -76,6 +88,33 @@ def raise_error(error: Exception) -> Handler:
         raise error
 
     return handler
+
+
+def sequenced(*steps: Handler) -> Handler:
+    remaining = list(steps)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return remaining.pop(0)(request)
+
+    return handler
+
+
+def capturing(handler: Handler, requests: list[httpx.Request]) -> Handler:
+    def wrapped(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return handler(request)
+
+    return wrapped
+
+
+def counting_retry_delay(value: float = 0.0) -> tuple[Callable[[], float], list[None]]:
+    calls: list[None] = []
+
+    def retry_delay() -> float:
+        calls.append(None)
+        return value
+
+    return retry_delay, calls
 
 
 def capture_request(
@@ -440,3 +479,273 @@ def test_error_response_message_drops_a_status_that_is_not_a_code() -> None:
 
     assert "400" in str(error.value)
     assert "secret user message" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "first_failure",
+    [
+        pytest.param(respond(503, {"error": {"status": "UNAVAILABLE"}}), id="503"),
+        pytest.param(respond(500, {"error": {"status": "INTERNAL"}}), id="500"),
+        pytest.param(raise_error(httpx.ConnectError("refused")), id="connect-error"),
+    ],
+)
+def test_retries_same_model_after_jitter_when_no_fallback_is_configured(
+    first_failure: Handler,
+) -> None:
+    requests: list[httpx.Request] = []
+    retry_delay, calls = counting_retry_delay()
+
+    answer = generate(
+        capturing(sequenced(first_failure, answer_with_parts({"text": "Hi"})), requests),
+        retry_delay=retry_delay,
+    )
+
+    assert answer == "Hi"
+    assert len(requests) == 2
+    assert all(request.url.path.endswith("/test-model:generateContent") for request in requests)
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "first_failure",
+    [
+        pytest.param(respond(503, {"error": {"status": "UNAVAILABLE"}}), id="503"),
+        pytest.param(respond(500, {"error": {"status": "INTERNAL"}}), id="500"),
+        pytest.param(raise_error(httpx.ConnectError("refused")), id="connect-error"),
+    ],
+)
+def test_retries_fallback_model_with_identical_body_when_configured(
+    first_failure: Handler,
+) -> None:
+    requests: list[httpx.Request] = []
+    retry_delay, calls = counting_retry_delay()
+
+    answer = generate(
+        capturing(sequenced(first_failure, answer_with_parts({"text": "Hi"})), requests),
+        fallback_model=FALLBACK_MODEL,
+        retry_delay=retry_delay,
+    )
+
+    assert answer == "Hi"
+    assert len(requests) == 2
+    assert requests[0].url.path.endswith("/test-model:generateContent")
+    assert requests[1].url.path.endswith(f"/{FALLBACK_MODEL}:generateContent")
+    assert requests[0].content == requests[1].content
+    assert calls == []
+
+
+def test_falls_back_on_model_not_found() -> None:
+    answer = generate(
+        sequenced(
+            respond(404, {"error": {"status": "NOT_FOUND"}}), answer_with_parts({"text": "Hi"})
+        ),
+        fallback_model=FALLBACK_MODEL,
+    )
+
+    assert answer == "Hi"
+
+
+def test_model_not_found_surfaces_without_a_fallback() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError) as error:
+        generate(capturing(respond(404, {"error": {"status": "NOT_FOUND"}}), requests))
+
+    assert len(requests) == 1
+    assert "404" in str(error.value)
+
+
+def test_falls_back_on_rate_limit() -> None:
+    answer = generate(
+        sequenced(rate_limited("5s"), answer_with_parts({"text": "Hi"})),
+        fallback_model=FALLBACK_MODEL,
+    )
+
+    assert answer == "Hi"
+
+
+def test_rate_limit_surfaces_without_a_fallback() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMRateLimitError) as error:
+        generate(capturing(rate_limited("5s"), requests))
+
+    assert len(requests) == 1
+    assert error.value.retry_after_seconds == 5
+
+
+@pytest.mark.parametrize(
+    "fallback_model", [None, FALLBACK_MODEL], ids=["no-fallback", "with-fallback"]
+)
+def test_client_error_is_never_retried(fallback_model: str | None) -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(respond(400, {"error": {"status": "INVALID_ARGUMENT"}}), requests),
+            fallback_model=fallback_model,
+        )
+
+    assert len(requests) == 1
+
+
+def test_blocked_answer_is_never_retried_even_with_a_fallback() -> None:
+    requests: list[httpx.Request] = []
+    body = {"candidates": [{"finishReason": "SAFETY", "content": {"parts": [{"text": "x"}]}}]}
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(respond(200, body), requests),
+            response_schema=SAMPLE_SCHEMA,
+            fallback_model=FALLBACK_MODEL,
+        )
+
+    assert len(requests) == 1
+
+
+def test_empty_answer_is_never_retried_even_with_a_fallback() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(answer_with_parts({"text": "thinking", "thought": True}), requests),
+            fallback_model=FALLBACK_MODEL,
+        )
+
+    assert len(requests) == 1
+
+
+def test_read_timeout_is_never_retried_even_with_a_fallback() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMTimeoutError):
+        generate(
+            capturing(raise_error(httpx.ReadTimeout("timed out")), requests),
+            fallback_model=FALLBACK_MODEL,
+        )
+
+    assert len(requests) == 1
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        pytest.param(httpx.ReadError("broken"), id="read-error"),
+        pytest.param(httpx.InvalidURL("bad model id"), id="invalid-url"),
+    ],
+)
+def test_other_transport_errors_are_never_retried_even_with_a_fallback(error: Exception) -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(capturing(raise_error(error), requests), fallback_model=FALLBACK_MODEL)
+
+    assert len(requests) == 1
+
+
+def test_second_failure_always_surfaces_with_no_further_retry() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(
+                sequenced(
+                    respond(503, {"error": {"status": "UNAVAILABLE"}}),
+                    respond(503, {"error": {"status": "UNAVAILABLE"}}),
+                ),
+                requests,
+            ),
+            fallback_model=FALLBACK_MODEL,
+        )
+
+    assert len(requests) == 2
+
+
+def test_last_attempts_error_type_wins_over_the_first() -> None:
+    with pytest.raises(LLMRateLimitError) as error:
+        generate(
+            sequenced(respond(503, {"error": {"status": "UNAVAILABLE"}}), rate_limited("9s")),
+            fallback_model=FALLBACK_MODEL,
+        )
+
+    assert error.value.retry_after_seconds == 9
+
+
+def test_second_attempt_gets_only_the_time_left_on_the_shared_deadline() -> None:
+    calls = 0
+
+    async def handler(_: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.sleep(0.05)
+            return httpx.Response(503, json={"error": {"status": "UNAVAILABLE"}})
+        return httpx.Response(
+            200, json={"candidates": [{"content": {"parts": [{"text": "Hi"}]}}]}
+        )
+
+    provider = GeminiProvider(
+        "test-key",
+        "test-model",
+        TEST_GENERATE_CONTENT_URL,
+        transport=httpx.MockTransport(handler),
+        timeout_seconds=0.08,
+        retry_delay=lambda: 0.0,
+        min_retry_seconds=0.0,
+    )
+
+    started = time.monotonic()
+    answer = asyncio.run(provider.generate(list(HELLO_CONVERSATION)))
+    elapsed = time.monotonic() - started
+
+    assert answer == "Hi"
+    assert calls == 2
+    assert elapsed < 0.08 + 0.05
+
+
+def test_retry_skipped_when_jitter_would_leave_too_little_budget() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(respond(503, {"error": {"status": "UNAVAILABLE"}}), requests),
+            retry_delay=lambda: 100.0,
+            min_retry_seconds=8.0,
+            timeout_seconds=25.0,
+        )
+
+    assert len(requests) == 1
+
+
+def test_fallback_equal_to_primary_model_is_treated_as_no_fallback() -> None:
+    requests: list[httpx.Request] = []
+
+    with pytest.raises(LLMUnavailableError):
+        generate(
+            capturing(respond(404, {"error": {"status": "NOT_FOUND"}}), requests),
+            fallback_model="test-model",
+        )
+
+    assert len(requests) == 1
+
+
+def test_logs_attempt_number_model_and_scrubbed_error_without_body_or_key(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING)
+    body = {"error": {"code": 503, "status": "UNAVAILABLE", "message": "secret user message"}}
+
+    generate(
+        sequenced(respond(503, body), answer_with_parts({"text": "Hi"})),
+        fallback_model=FALLBACK_MODEL,
+    )
+
+    [record] = caplog.records
+    message = record.getMessage()
+    assert "attempt 1" in message
+    assert "test-model" in message
+    assert "503" in message
+    assert "UNAVAILABLE" in message
+    assert FALLBACK_MODEL in message
+    assert "secret user message" not in message
+    assert "test-key" not in message
