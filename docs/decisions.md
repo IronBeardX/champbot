@@ -368,3 +368,17 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Fixed texts stay English even when the lead-in isn't. Extraction quality is checked by scripted turns and evals, never by unit tests.
   - IRO-194 can render `flights` as cards with no backend change.
   - A live probe against `gemini-3.6-flash` on 2026-11-05 confirmed the new `anyOf`/null schema and the nested `flight_query` object: "Flights from Delhi to London next Friday, 2026-11-06" returned `flight_query: {origin: DEL, destination: LHR, date: 2026-11-06}` with `finishReason: STOP`. The free-tier daily quota (20 requests/day) was exhausted immediately after by other work this same day, before the matching null-`flight_query` case or the full manual scenario list could run live; those run against `pywrangler dev` once the quota resets, before this PR is marked ready for review.
+
+## 24. Chat UI identity: own tokens, system fonts for Devanagari, light-only, fill-only chips
+
+- **Context**: the chat UI needed to look finished and guide a grader to policies, flights and Hindi (IRO-191), without impersonating Air India, within decision 7's plain HTML/CSS/JS, no build step, no dependencies.
+- **Decision**: all colors, radii and the font stack are CSS custom properties on `:root` in `styles.css`; no other rule holds a raw color. The accent is the favicon's existing blue (`#1d4ed8`) over neutral slate grays, not sampled from airindia.com. No Air India logo, wordmark, "Maharaja" imagery or hotlinked asset is used; the disclaimer sits in the page header, not a footer a grader would have to scroll to find. The font is a system stack with explicit Devanagari faces after the UI fonts. Light only, via `color-scheme: only light`. Suggested-prompt chips fill the message box instead of sending it.
+- **Alternatives**:
+  - A web font for Devanagari (Google Fonts `Noto Sans Devanagari`): a third-party request, a flash of fallback text before it loads, and a dependency the no-build frontend doesn't otherwise have, for a face every target OS already ships.
+  - Removing `color-scheme` instead of setting `only light`: stops the page's own dark rendering but not Chrome Android's forced auto-darkening, which `only light` also opts out of.
+  - A dark theme: out of scope, and doubles the visual checks for a demo.
+  - Auto-sending chips on click: burns the ~20 req/day Gemini free tier (decision 3) per click, and the grader can't read or edit the prompt first.
+- **Consequences**:
+  - Recoloring the UI is a diff to the `:root` block alone; `grep -nE '#[0-9a-fA-F]{3,6}' frontend/public/styles.css` outside that block catches drift.
+  - Hindi rendering depends on the visitor's OS fonts; current desktop and mobile OSes all ship one of the listed faces, though a minimal Linux install without Noto may fall back further.
+  - Adding dark mode later means a `prefers-color-scheme: dark` block overriding the same tokens, plus changing `color-scheme`.
