@@ -89,87 +89,28 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-  preview:
-    needs: [backend, frontend]
-    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'iro-')
+  deploy-frontend:
+    needs: [deploy]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
+    environment:
+      name: production
+      url: https://champbot-frontend.alejandroyeroval.workers.dev
     concurrency:
-      group: preview-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
-    env:
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
+      group: deploy-production-frontend
+      cancel-in-progress: false
     defaults:
       run:
-        working-directory: backend
+        working-directory: frontend
     steps:
-      - name: Resolve preview alias
-        working-directory: .
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          if [[ ! "$HEAD_REF" =~ ^(iro-[0-9]+)- ]]; then
-            echo "::error::Branch '$HEAD_REF' does not start with iro-<n>-"
-            exit 1
-          fi
-          echo "PREVIEW_ALIAS=${BASH_REMATCH[1]}" >> "$GITHUB_ENV"
-
       - uses: actions/checkout@v5
-        with:
-          ref: ${{ env.HEAD_SHA }}
-          persist-credentials: false
-
-      - uses: astral-sh/setup-uv@v7
-        with:
-          enable-cache: true
-          cache-dependency-glob: backend/uv.lock
 
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
 
-      - name: Install dependencies
-        run: uv sync --locked
-
-      # A job-level concurrency group only applies once the job starts, so an older push whose
-      # backend checks finish late would cancel the newer preview instead of being cancelled by it.
-      - name: Check the commit is still the pull request head
-        id: head
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          current_head=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq .head.sha)
-          if [[ "$current_head" == "$HEAD_SHA" ]]; then
-            echo "is_current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::Skipping the preview: $HEAD_SHA is no longer the head of #$PR_NUMBER"
-          fi
-
-      - name: Upload preview
-        if: steps.head.outputs.is_current == 'true'
-        run: uv run pywrangler versions upload --preview-alias "$PREVIEW_ALIAS" --message "$HEAD_SHA"
+      - name: Deploy
+        run: npx --yes wrangler@4 deploy --message "$GITHUB_SHA"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-      - name: Comment preview URL
-        if: steps.head.outputs.is_current == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          marker='<!-- champbot-preview -->'
-          body="$marker
-          **Preview:** https://${PREVIEW_ALIAS}-champbot.alejandroyeroval.workers.dev
-
-          Built from [\`${HEAD_SHA::7}\`]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$HEAD_SHA)."
-          comment_ids=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id")
-          comment_id=$(head -n 1 <<< "$comment_ids")
-          if [[ -n "$comment_id" ]]; then
-            gh api --silent -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" -f body="$body"
-          else
-            gh api --silent "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" -f body="$body"
-          fi
