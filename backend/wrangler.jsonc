@@ -12,9 +12,6 @@
 		"GEMINI_THINKING_LEVEL": "LOW",
 		"RETRIEVAL_MIN_SCORE": "0.5"
 	},
-	"assets": {
-		"directory": "../frontend/public"
-	},
 	"vectorize": [
 		{
 			"binding": "VECTORIZE",

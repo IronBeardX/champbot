@@ -1,3 +1,4 @@
+import { apiBase } from "./api.js";
 import { formatDuration, formatFare } from "./flights.js";
 import { buildHistory } from "./history.js";
 import { failureMessage, INTENT_LABELS, readReply } from "./reply.js";
@@ -13,6 +14,7 @@ const suggestions = document.querySelector(".suggestions");
 const HINT_DELAY_MS = 5000;
 const HINT_TEXT = "Still working, answers can take up to 20 seconds.";
 const REQUEST_TIMEOUT_MS = 40_000;
+const API_BASE = apiBase(location);
 
 let turns = [];
 let activeRetry = null;
@@ -185,7 +187,7 @@ async function runAttempt({ message, history, userTurn, pending }) {
   }, HINT_DELAY_MS);
 
   try {
-    const response = await fetch("/chat", {
+    const response = await fetch(`${API_BASE}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history }),
