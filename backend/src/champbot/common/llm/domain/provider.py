@@ -1,8 +1,14 @@
 from collections.abc import Mapping
+from enum import StrEnum
 from typing import Any, Protocol
 
 from champbot.common.core.domain.exceptions import ChampBotError
 from champbot.common.llm.domain.message import Message
+
+
+class ProviderEnum(StrEnum):
+    GEMINI = "gemini"
+    GROQ = "groq"
 
 
 class LLMProvider(Protocol):

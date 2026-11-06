@@ -10,31 +10,48 @@ import pytest
 from champbot.common.core.domain.exceptions import InvalidSettingError, MissingSettingError
 from champbot.common.llm.infrastructure.settings import GeminiSettings, load_gemini_settings
 
-EXPECTED = GeminiSettings(api_key="test-key", model="test-model", thinking_level="LOW")
+EXPECTED = GeminiSettings(
+    api_key="test-key",
+    model="test-model",
+    generate_content_url="https://test.example/generate",
+    thinking_level="LOW",
+)
+
+BASE_VALUES = {
+    "GEMINI_API_KEY": "test-key",
+    "GEMINI_MODEL": "test-model",
+    "GEMINI_GENERATE_CONTENT_URL": "https://test.example/generate",
+}
 
 
 def test_reads_gemini_settings_from_workers_env() -> None:
-    workers_env = SimpleNamespace(GEMINI_API_KEY="test-key", GEMINI_MODEL="test-model")
+    workers_env = SimpleNamespace(**BASE_VALUES)
 
     assert load_gemini_settings(workers_env, environ={}) == EXPECTED
 
 
 def test_reads_gemini_settings_from_environ_without_workers_env() -> None:
-    environ = {"GEMINI_API_KEY": "test-key", "GEMINI_MODEL": "test-model"}
-
-    assert load_gemini_settings(None, environ) == EXPECTED
+    assert load_gemini_settings(None, BASE_VALUES) == EXPECTED
 
 
 def test_prefers_workers_env_over_environ_for_gemini_settings() -> None:
-    workers_env = SimpleNamespace(GEMINI_API_KEY="test-key", GEMINI_MODEL="test-model")
-    environ = {"GEMINI_API_KEY": "other-key", "GEMINI_MODEL": "other-model"}
+    workers_env = SimpleNamespace(**BASE_VALUES)
+    environ = {
+        "GEMINI_API_KEY": "other-key",
+        "GEMINI_MODEL": "other-model",
+        "GEMINI_GENERATE_CONTENT_URL": "https://other.example/generate",
+    }
 
     assert load_gemini_settings(workers_env, environ) == EXPECTED
 
 
 def test_does_not_fall_back_to_environ_for_a_gemini_setting_missing_from_workers_env() -> None:
     workers_env = SimpleNamespace(GEMINI_API_KEY="test-key")
-    environ = {"GEMINI_API_KEY": "other-key", "GEMINI_MODEL": "other-model"}
+    environ = {
+        "GEMINI_API_KEY": "other-key",
+        "GEMINI_MODEL": "other-model",
+        "GEMINI_GENERATE_CONTENT_URL": "https://other.example/generate",
+    }
 
     with pytest.raises(MissingSettingError) as error:
         load_gemini_settings(workers_env, environ)
@@ -42,13 +59,15 @@ def test_does_not_fall_back_to_environ_for_a_gemini_setting_missing_from_workers
     assert error.value.name == "GEMINI_MODEL"
 
 
-@pytest.mark.parametrize("missing_name", ["GEMINI_API_KEY", "GEMINI_MODEL"])
+@pytest.mark.parametrize(
+    "missing_name", ["GEMINI_API_KEY", "GEMINI_MODEL", "GEMINI_GENERATE_CONTENT_URL"]
+)
 @pytest.mark.parametrize("missing_value", [None, ""])
 @pytest.mark.parametrize("source", ["workers_env", "environ"])
 def test_missing_or_empty_gemini_setting_raises_error_naming_it(
     source: str, missing_value: str | None, missing_name: str
 ) -> None:
-    values = {"GEMINI_API_KEY": "test-key", "GEMINI_MODEL": "test-model"}
+    values = dict(BASE_VALUES)
     del values[missing_name]
     if missing_value is not None:
         values[missing_name] = missing_value
@@ -66,7 +85,7 @@ def test_missing_or_empty_gemini_setting_raises_error_naming_it(
 def test_gemini_thinking_level_defaults_to_low_when_absent_or_empty(
     missing_value: str | None,
 ) -> None:
-    environ = {"GEMINI_API_KEY": "test-key", "GEMINI_MODEL": "test-model"}
+    environ = dict(BASE_VALUES)
     if missing_value is not None:
         environ["GEMINI_THINKING_LEVEL"] = missing_value
 
@@ -75,21 +94,13 @@ def test_gemini_thinking_level_defaults_to_low_when_absent_or_empty(
 
 @pytest.mark.parametrize("raw_value", ["medium", "Medium", "MEDIUM"])
 def test_gemini_thinking_level_is_normalized_to_upper_case(raw_value: str) -> None:
-    environ = {
-        "GEMINI_API_KEY": "test-key",
-        "GEMINI_MODEL": "test-model",
-        "GEMINI_THINKING_LEVEL": raw_value,
-    }
+    environ = {**BASE_VALUES, "GEMINI_THINKING_LEVEL": raw_value}
 
     assert load_gemini_settings(None, environ).thinking_level == "MEDIUM"
 
 
 def test_invalid_gemini_thinking_level_raises_error_naming_it() -> None:
-    environ = {
-        "GEMINI_API_KEY": "test-key",
-        "GEMINI_MODEL": "test-model",
-        "GEMINI_THINKING_LEVEL": "FAST",
-    }
+    environ = {**BASE_VALUES, "GEMINI_THINKING_LEVEL": "FAST"}
 
     with pytest.raises(InvalidSettingError) as error:
         load_gemini_settings(None, environ)
@@ -98,8 +109,6 @@ def test_invalid_gemini_thinking_level_raises_error_naming_it() -> None:
 
 
 def test_reads_gemini_thinking_level_from_workers_env() -> None:
-    workers_env = SimpleNamespace(
-        GEMINI_API_KEY="test-key", GEMINI_MODEL="test-model", GEMINI_THINKING_LEVEL="HIGH"
-    )
+    workers_env = SimpleNamespace(**BASE_VALUES, GEMINI_THINKING_LEVEL="HIGH")
 
     assert load_gemini_settings(workers_env, environ={}).thinking_level == "HIGH"

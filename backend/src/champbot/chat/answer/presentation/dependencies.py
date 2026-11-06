@@ -10,9 +10,14 @@ from champbot.common.core.infrastructure.cloudflare import load_cloudflare_setti
 from champbot.common.core.infrastructure.http_client import open_http_client
 from champbot.common.embeddings.domain.embedder import Embedder
 from champbot.common.embeddings.infrastructure.workers_ai import WorkersAIEmbedder
-from champbot.common.llm.domain.provider import LLMProvider
+from champbot.common.llm.domain.provider import LLMProvider, ProviderEnum
 from champbot.common.llm.infrastructure.gemini import GeminiProvider
-from champbot.common.llm.infrastructure.settings import load_gemini_settings
+from champbot.common.llm.infrastructure.groq import GroqProvider
+from champbot.common.llm.infrastructure.settings import (
+    load_gemini_settings,
+    load_groq_settings,
+    load_llm_provider,
+)
 from champbot.common.vector_store.domain.store import VectorStore
 from champbot.common.vector_store.infrastructure.vectorize import VectorizeStore
 
@@ -28,8 +33,24 @@ class RetrievalPorts:
 
 
 def get_llm_provider(request: Request) -> LLMProvider:
-    settings = load_gemini_settings(request.scope.get("env"))
-    return GeminiProvider(settings.api_key, settings.model, thinking_level=settings.thinking_level)
+    env = request.scope.get("env")
+    match load_llm_provider(env):
+        case ProviderEnum.GEMINI:
+            settings = load_gemini_settings(env)
+            return GeminiProvider(
+                settings.api_key,
+                settings.model,
+                settings.generate_content_url,
+                thinking_level=settings.thinking_level,
+            )
+        case ProviderEnum.GROQ:
+            settings = load_groq_settings(env)
+            return GroqProvider(
+                settings.api_key,
+                settings.model,
+                settings.generate_content_url,
+                thinking_level=settings.thinking_level,
+            )
 
 
 async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts]:
