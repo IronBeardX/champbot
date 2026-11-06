@@ -43,4 +43,5 @@ async def chat(
         answer=result.answer,
         sources=[SourceResponse(title=source.title, url=source.url) for source in result.sources],
         flights=[FlightResponse.from_flight(flight) for flight in result.flights],
+        flights_note=result.flights_note,
     )

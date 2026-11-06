@@ -1,7 +1,7 @@
 import asyncio
 import json
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -16,6 +16,7 @@ from champbot.chat.answer.application.services import (
     render_policy_context,
     usable_chunks,
 )
+from champbot.chat.answer.domain.flight_replies import SAMPLE_SCHEDULE_NOTE
 from champbot.chat.answer.domain.structured_answer import STRUCTURED_ANSWER_SCHEMA
 from champbot.chat.common.domain.assistant_prompt import ASSISTANT_SYSTEM_PROMPT
 from champbot.chat.common.domain.rag_prompt import NO_POLICY_CONTEXT
@@ -309,6 +310,7 @@ def test_answer_chat_prepends_rag_context_to_the_persona() -> None:
     assert result.answer == "Here is the policy."
     assert result.sources == [PolicySource(title="Baggage", url=chunks[0].metadata["source_url"])]
     assert result.flights == []
+    assert result.flights_note is None
 
 
 def test_answer_chat_uses_no_policy_context_when_nothing_kept() -> None:
@@ -400,6 +402,7 @@ def test_answer_chat_does_not_search_when_intent_is_not_flight_search() -> None:
     assert flight_search.calls == []
     assert result.answer == "Economy gets 23kg."
     assert result.flights == []
+    assert result.flights_note is None
 
 
 def test_answer_chat_searches_and_appends_flights_for_a_complete_flight_query() -> None:
@@ -409,6 +412,7 @@ def test_answer_chat_searches_and_appends_flights_for_a_complete_flight_query() 
         destination="LHR",
         departure=datetime(2026, 11, 6, 13, 30),
         arrival=datetime(2026, 11, 6, 18, 20),
+        duration=timedelta(hours=10, minutes=20),
         fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
     )
     provider = FakeProvider(
@@ -433,4 +437,5 @@ def test_answer_chat_searches_and_appends_flights_for_a_complete_flight_query() 
 
     assert flight_search.calls == [("DEL", "LHR", date(2026, 11, 6))]
     assert result.flights == [flight]
-    assert "AI 111" in result.answer
+    assert result.answer == "Flights from Delhi to London on Friday 6 November 2026:"
+    assert result.flights_note == SAMPLE_SCHEDULE_NOTE

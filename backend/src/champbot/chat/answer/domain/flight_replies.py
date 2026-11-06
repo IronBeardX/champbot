@@ -1,7 +1,3 @@
-FLIGHT_LINE = "{flight_number}: {origin} {departs} → {destination} {arrives}{next_day}, {fares}"
-NEXT_DAY_MARK = " (+1 day)"
-FARE = "{cabin} INR {amount:,}"
-
 SAMPLE_SCHEDULE_NOTE = (
     "This is a sample schedule for this demo, not live fares or availability. Times are local "
     "to each airport. For real flights and bookings, visit airindia.com."

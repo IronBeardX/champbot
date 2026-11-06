@@ -1,5 +1,5 @@
 import asyncio
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
@@ -8,11 +8,11 @@ from champbot.chat.answer.application.flight_results import (
     answer_flight_query,
     format_long_date,
     join_cities,
-    render_flight_line,
     render_flights_prompt,
     today_in_ist,
     upcoming_week,
 )
+from champbot.chat.answer.domain.flight_replies import SAMPLE_SCHEDULE_NOTE
 from champbot.chat.answer.domain.structured_answer import FlightQuery
 from champbot.common.flights.domain.flight import Cabin, Flight
 
@@ -34,17 +34,7 @@ def ai_111() -> Flight:
         destination="LHR",
         departure=datetime(2026, 11, 6, 13, 30),
         arrival=datetime(2026, 11, 6, 18, 20),
-        fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
-    )
-
-
-def ai_112_overnight() -> Flight:
-    return Flight(
-        flight_number="AI 112",
-        origin="LHR",
-        destination="DEL",
-        departure=datetime(2026, 11, 6, 21, 0),
-        arrival=datetime(2026, 11, 7, 10, 30),
+        duration=timedelta(hours=10, minutes=20),
         fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
     )
 
@@ -131,7 +121,7 @@ def test_render_flights_prompt_leaves_no_placeholder_unfilled() -> None:
     assert "{" not in prompt
 
 
-def test_complete_query_with_results_searches_and_appends_flights() -> None:
+def test_complete_query_with_results_searches_and_returns_flights_with_a_note() -> None:
     search = FakeFlightSearch([ai_111()])
     query = FlightQuery(origin="DEL", destination="LHR", date=date(2026, 11, 6))
 
@@ -143,13 +133,9 @@ def test_complete_query_with_results_searches_and_appends_flights() -> None:
     )
 
     assert search.calls == [("DEL", "LHR", date(2026, 11, 6))]
-    assert reply.answer == (
-        "Flights from Delhi to London on Friday 6 November 2026:\n\n"
-        "AI 111: DEL 13:30 → LHR 18:20, Economy INR 48,000, Business INR 180,000\n\n"
-        "This is a sample schedule for this demo, not live fares or availability. Times are "
-        "local to each airport. For real flights and bookings, visit airindia.com."
-    )
+    assert reply.answer == "Flights from Delhi to London on Friday 6 November 2026:"
     assert reply.flights == [ai_111()]
+    assert reply.flights_note == SAMPLE_SCHEDULE_NOTE
 
 
 def test_complete_query_with_no_results_returns_no_flights_text() -> None:
@@ -169,6 +155,7 @@ def test_complete_query_with_no_results_returns_no_flights_text() -> None:
         "in this sample schedule."
     )
     assert reply.flights == []
+    assert reply.flights_note is None
 
 
 def test_date_in_the_past_returns_date_passed_without_calling_search() -> None:
@@ -182,6 +169,7 @@ def test_date_in_the_past_returns_date_passed_without_calling_search() -> None:
         "Thursday 5 November 2026, or a later date."
     )
     assert reply.flights == []
+    assert reply.flights_note is None
     assert search.calls == []
 
 
@@ -207,6 +195,7 @@ def test_unsupported_slot_returns_covered_cities_without_calling_search(slot: st
     assert "Delhi (DEL)" in reply.answer
     assert "and Singapore (SIN)" in reply.answer
     assert reply.flights == []
+    assert reply.flights_note is None
     assert search.calls == []
 
 
@@ -221,6 +210,7 @@ def test_same_airport_returns_same_airport_text_without_calling_search() -> None
         "different cities."
     )
     assert reply.flights == []
+    assert reply.flights_note is None
     assert search.calls == []
 
 
@@ -235,6 +225,7 @@ def test_incomplete_query_leaves_the_models_answer_unchanged(missing: str) -> No
 
     assert reply.answer == "Where would you like to fly from?"
     assert reply.flights == []
+    assert reply.flights_note is None
     assert search.calls == []
 
 
@@ -245,23 +236,8 @@ def test_null_flight_query_leaves_the_models_answer_unchanged() -> None:
 
     assert reply.answer == "Where would you like to fly from?"
     assert reply.flights == []
+    assert reply.flights_note is None
     assert search.calls == []
-
-
-def test_render_flight_line_has_thousands_separators_and_cabin_order() -> None:
-    assert render_flight_line(ai_111()) == (
-        "AI 111: DEL 13:30 → LHR 18:20, Economy INR 48,000, Business INR 180,000"
-    )
-
-
-def test_render_flight_line_marks_an_overnight_arrival() -> None:
-    assert render_flight_line(ai_112_overnight()) == (
-        "AI 112: LHR 21:00 → DEL 10:30 (+1 day), Economy INR 48,000, Business INR 180,000"
-    )
-
-
-def test_render_flight_line_stays_well_under_the_history_budget() -> None:
-    assert len(render_flight_line(ai_111())) < 100
 
 
 def test_join_cities_lists_all_ten_in_catalog_order_with_and_before_the_last() -> None:

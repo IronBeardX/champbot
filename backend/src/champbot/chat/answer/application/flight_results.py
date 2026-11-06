@@ -4,9 +4,6 @@ from datetime import date, datetime, timedelta, timezone
 from champbot.chat.answer.domain.flight_replies import (
     COVERED_CITIES,
     DATE_PASSED,
-    FARE,
-    FLIGHT_LINE,
-    NEXT_DAY_MARK,
     NO_FLIGHTS,
     SAME_AIRPORT,
     SAMPLE_SCHEDULE_NOTE,
@@ -56,28 +53,12 @@ def render_flights_prompt(today: date) -> str:
 class FlightReply:
     answer: str
     flights: list[Flight]
+    flights_note: str | None = None
 
 
 def join_cities() -> str:
     named = [f"{city} ({code})" for code, city in AIRPORT_CITIES.items()]
     return ", ".join(named[:-1]) + f" and {named[-1]}"
-
-
-def render_flight_line(flight: Flight) -> str:
-    fares = ", ".join(
-        FARE.format(cabin=cabin.value.capitalize(), amount=amount)
-        for cabin, amount in flight.fares.items()
-    )
-    next_day = NEXT_DAY_MARK if flight.arrival.date() > flight.departure.date() else ""
-    return FLIGHT_LINE.format(
-        flight_number=flight.flight_number,
-        origin=flight.origin,
-        departs=flight.departure.strftime("%H:%M"),
-        destination=flight.destination,
-        arrives=flight.arrival.strftime("%H:%M"),
-        next_day=next_day,
-        fares=fares,
-    )
 
 
 async def answer_flight_query(
@@ -111,5 +92,4 @@ async def answer_flight_query(
         )
         return FlightReply(f"{lead_in}\n\n{text}", [])
 
-    lines = "\n".join(render_flight_line(flight) for flight in flights)
-    return FlightReply(f"{lead_in}\n\n{lines}\n\n{SAMPLE_SCHEDULE_NOTE}", flights)
+    return FlightReply(lead_in, flights, SAMPLE_SCHEDULE_NOTE)

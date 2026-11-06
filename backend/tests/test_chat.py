@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable, Mapping
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from champbot.chat.answer.application.flight_results import render_flights_prompt
+from champbot.chat.answer.domain.flight_replies import SAMPLE_SCHEDULE_NOTE
 from champbot.chat.answer.presentation.dependencies import (
     RetrievalPorts,
     get_llm_provider,
@@ -183,6 +184,7 @@ def test_returns_provider_answer_for_the_message() -> None:
         "answer": "Yes, you can change it online.",
         "sources": [],
         "flights": [],
+        "flights_note": None,
     }
     assert provider.calls == [
         ([Message(Role.USER, "  Can I change my flight?")], NO_CONTEXT_SYSTEM_INSTRUCTION)
@@ -205,6 +207,7 @@ def test_flight_turn_returns_flights_in_the_flight_response_shape() -> None:
         destination="LHR",
         departure=datetime(2026, 11, 6, 13, 30),
         arrival=datetime(2026, 11, 6, 18, 20),
+        duration=timedelta(hours=10, minutes=20),
         fares={Cabin.ECONOMY: 48000, Cabin.BUSINESS: 180000},
     )
     provider = FakeProvider(
@@ -218,17 +221,21 @@ def test_flight_turn_returns_flights_in_the_flight_response_shape() -> None:
     )
 
     assert response.status_code == 200
-    assert response.json()["flights"] == [
+    body = response.json()
+    assert body["answer"] == "Flights from Delhi to London on Friday 6 November 2026:"
+    assert body["flights"] == [
         {
             "flight_number": "AI 111",
             "origin": "DEL",
             "destination": "LHR",
             "departure": "2026-11-06T13:30:00",
             "arrival": "2026-11-06T18:20:00",
+            "duration_minutes": 620,
             "fares": {"economy": 48000, "business": 180000},
             "currency": "INR",
         }
     ]
+    assert body["flights_note"] == SAMPLE_SCHEDULE_NOTE
 
 
 def test_non_flight_turn_returns_an_empty_flights_list() -> None:
@@ -238,6 +245,7 @@ def test_non_flight_turn_returns_an_empty_flights_list() -> None:
 
     assert response.status_code == 200
     assert response.json()["flights"] == []
+    assert response.json()["flights_note"] is None
 
 
 def test_sends_the_assistant_prompt_as_system_instruction() -> None:

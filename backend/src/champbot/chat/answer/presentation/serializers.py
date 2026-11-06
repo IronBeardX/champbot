@@ -78,3 +78,4 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[SourceResponse]
     flights: list[FlightResponse]
+    flights_note: str | None

@@ -40,6 +40,7 @@ class ChatAnswer:
     answer: str
     sources: list[PolicySource]
     flights: list[Flight]
+    flights_note: str | None
 
 
 async def answer_chat(
@@ -76,6 +77,7 @@ async def answer_chat(
         answer=reply.answer,
         sources=cited_sources(usable, parsed.source_ids),
         flights=reply.flights,
+        flights_note=reply.flights_note,
     )
 
 
