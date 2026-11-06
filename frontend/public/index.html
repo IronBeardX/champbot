@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <title>ChampBot</title>
     <link rel="icon" href="favicon.svg" />
     <link rel="stylesheet" href="styles.css" />
@@ -26,11 +29,20 @@
         <button type="button" class="chip" lang="hi">अगले शुक्रवार दिल्ली से लंदन की उड़ानें दिखाइए</button>
       </section>
       <form id="chat-form">
-        <label for="message">Your question</label>
-        <textarea id="message" name="message" required maxlength="2000" rows="4"></textarea>
-        <div class="actions">
-          <button id="new-conversation" type="button">New conversation</button>
-          <button id="send" type="submit">Send</button>
+        <div class="composer">
+          <label for="message" class="visually-hidden">Your question</label>
+          <textarea
+            id="message"
+            name="message"
+            required
+            maxlength="2000"
+            rows="2"
+            placeholder="Ask a question…"
+          ></textarea>
+          <div class="actions">
+            <button id="new-conversation" type="button">New conversation</button>
+            <button id="send" type="submit">Send</button>
+          </div>
         </div>
       </form>
     </main>
