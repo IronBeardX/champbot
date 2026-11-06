@@ -1,6 +1,7 @@
 import { formatDuration, formatFare } from "./flights.js";
 import { buildHistory } from "./history.js";
-import { INTENT_LABELS, NETWORK_ERROR_MESSAGE, readReply } from "./reply.js";
+import { failureMessage, INTENT_LABELS, readReply } from "./reply.js";
+import { remainingSeconds, retryLabel } from "./retry.js";
 
 const form = document.querySelector("#chat-form");
 const messageField = document.querySelector("#message");
@@ -11,8 +12,10 @@ const suggestions = document.querySelector(".suggestions");
 
 const HINT_DELAY_MS = 5000;
 const HINT_TEXT = "Still working, answers can take up to 20 seconds.";
+const REQUEST_TIMEOUT_MS = 40_000;
 
 let turns = [];
+let activeRetry = null;
 
 function addTurn(className, text) {
   const item = document.createElement("li");
@@ -126,15 +129,54 @@ function setButtonsDisabled(disabled) {
   newConversationButton.disabled = disabled;
 }
 
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
+function clearRetry() {
+  if (activeRetry === null) {
+    return;
+  }
+  clearInterval(activeRetry.intervalId);
+  activeRetry.button.remove();
+  activeRetry = null;
+}
 
-  const message = messageField.value;
-  const history = buildHistory(turns);
+function showFailure(pending, userTurn, errorText, retryAfterSeconds, onRetry) {
+  pending.textContent = errorText;
+  pending.className = "turn assistant error";
+  userTurn.classList.add("failed");
 
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "retry";
+  button.addEventListener("click", onRetry);
+  pending.append(button);
+
+  if (retryAfterSeconds === null || retryAfterSeconds <= 0) {
+    button.textContent = retryLabel(0);
+    activeRetry = { button, intervalId: null };
+    return;
+  }
+
+  const deadline = Date.now() + retryAfterSeconds * 1000;
+  button.disabled = true;
+  const tick = () => {
+    const remaining = remainingSeconds(deadline, Date.now());
+    button.textContent = retryLabel(remaining);
+    if (remaining === 0) {
+      clearInterval(intervalId);
+      button.disabled = false;
+    }
+  };
+  tick();
+  const intervalId = setInterval(tick, 250);
+  activeRetry = { button, intervalId };
+}
+
+async function runAttempt({ message, history, userTurn, pending }) {
+  clearRetry();
   setButtonsDisabled(true);
-  const userTurn = addTurn("user", message);
-  const pending = addTurn("assistant pending", "Thinking…");
+  pending.textContent = "Thinking…";
+  pending.className = "turn assistant pending";
+  userTurn.classList.remove("failed");
+
   const hintTimer = setTimeout(() => {
     const hint = document.createElement("span");
     hint.className = "hint";
@@ -147,25 +189,39 @@ form.addEventListener("submit", async (event) => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ message, history }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     const reply = await readReply(response);
     if (reply.answer !== undefined) {
       renderAnswer(pending, reply);
       turns.push({ user: message, assistant: reply.answer });
-      messageField.value = "";
+      if (messageField.value === message) {
+        messageField.value = "";
+      }
     } else {
-      pending.textContent = reply.error;
-      pending.className = "turn assistant error";
-      userTurn.classList.add("failed");
+      showFailure(pending, userTurn, reply.error, reply.retryAfter ?? null, () =>
+        runAttempt({ message, history, userTurn, pending }),
+      );
     }
-  } catch {
-    pending.textContent = NETWORK_ERROR_MESSAGE;
-    pending.className = "turn assistant error";
-    userTurn.classList.add("failed");
+  } catch (error) {
+    showFailure(pending, userTurn, failureMessage(error), null, () =>
+      runAttempt({ message, history, userTurn, pending }),
+    );
   } finally {
     clearTimeout(hintTimer);
     setButtonsDisabled(false);
   }
+}
+
+form.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const message = messageField.value;
+  const history = buildHistory(turns);
+  const userTurn = addTurn("user", message);
+  const pending = addTurn("assistant pending", "Thinking…");
+
+  await runAttempt({ message, history, userTurn, pending });
 });
 
 suggestions.addEventListener("click", (event) => {
@@ -178,6 +234,7 @@ suggestions.addEventListener("click", (event) => {
 });
 
 newConversationButton.addEventListener("click", () => {
+  clearRetry();
   turns = [];
   conversation.querySelectorAll(".turn:not(.greeting)").forEach((turn) => turn.remove());
   messageField.value = "";
