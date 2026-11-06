@@ -31,6 +31,7 @@ class FlightResponse(BaseModel):
     destination: str
     departure: datetime
     arrival: datetime
+    duration_minutes: int
     fares: dict[Cabin, int]
     currency: Literal["INR"] = "INR"
 
@@ -42,5 +43,6 @@ class FlightResponse(BaseModel):
             destination=flight.destination,
             departure=flight.departure,
             arrival=flight.arrival,
+            duration_minutes=int(flight.duration.total_seconds() // 60),
             fares=dict(flight.fares),
         )

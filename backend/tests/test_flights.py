@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,6 +41,7 @@ def test_served_route_returns_the_schedule() -> None:
             "destination": "LHR",
             "departure": "2026-11-09T13:30:00",
             "arrival": "2026-11-09T18:20:00",
+            "duration_minutes": 620,
             "fares": {"economy": 48000, "business": 180000},
             "currency": "INR",
         }
@@ -128,6 +129,7 @@ def test_valid_query_is_forwarded_to_the_adapter_and_results_keep_their_order() 
         destination="BOM",
         departure=datetime(2026, 11, 9, 7, 0),
         arrival=datetime(2026, 11, 9, 9, 10),
+        duration=timedelta(hours=2, minutes=10),
         fares={Cabin.ECONOMY: 5000, Cabin.BUSINESS: 18000},
     )
     search = FakeFlightSearch([first])
