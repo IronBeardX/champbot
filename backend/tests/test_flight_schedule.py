@@ -56,6 +56,27 @@ def test_overnight_flight_arrives_the_next_calendar_day() -> None:
     assert flight.arrival.date() == date(2026, 11, 10)
 
 
+def test_duration_accounts_for_the_utc_offset_difference() -> None:
+    (flight,) = search("DEL", "LHR", date(2026, 11, 9))
+
+    assert flight.duration == timedelta(hours=10, minutes=20)
+
+
+def test_duration_of_an_overnight_flight_crossing_time_zones() -> None:
+    (flight,) = search("LHR", "DEL", date(2026, 11, 9))
+
+    assert flight.flight_number == "AI 112"
+    assert flight.duration == timedelta(hours=8)
+
+
+def test_every_served_flight_has_a_plausible_duration() -> None:
+    flights = all_flights_over_a_full_week()
+
+    assert flights
+    for flight in flights:
+        assert timedelta(minutes=30) <= flight.duration <= timedelta(hours=18)
+
+
 @pytest.mark.parametrize(
     "departure_date",
     [

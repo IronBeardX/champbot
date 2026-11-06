@@ -11,6 +11,19 @@ _DAILY = frozenset(range(7))
 _FARE_PCT_MIN = 80
 _FARE_PCT_RANGE = 51
 
+_STANDARD_UTC_OFFSETS: Mapping[AirportCode, timedelta] = {
+    "DEL": timedelta(hours=5, minutes=30),
+    "BOM": timedelta(hours=5, minutes=30),
+    "BLR": timedelta(hours=5, minutes=30),
+    "MAA": timedelta(hours=5, minutes=30),
+    "CCU": timedelta(hours=5, minutes=30),
+    "HYD": timedelta(hours=5, minutes=30),
+    "DXB": timedelta(hours=4),
+    "LHR": timedelta(hours=0),
+    "JFK": timedelta(hours=-5),
+    "SIN": timedelta(hours=8),
+}
+
 
 @dataclass(frozen=True)
 class _ScheduledFlight:
@@ -303,6 +316,9 @@ def _build_flight(scheduled: _ScheduledFlight, departure_date: date) -> Flight |
     except OverflowError:
         return None
     arrival = datetime.combine(arrival_date, scheduled.arrives)
+    duration = (arrival - _STANDARD_UTC_OFFSETS[scheduled.destination]) - (
+        departure - _STANDARD_UTC_OFFSETS[scheduled.origin]
+    )
     pct = _fare_multiplier_pct(scheduled.flight_number, departure_date)
     return Flight(
         flight_number=scheduled.flight_number,
@@ -310,5 +326,6 @@ def _build_flight(scheduled: _ScheduledFlight, departure_date: date) -> Flight |
         destination=scheduled.destination,
         departure=departure,
         arrival=arrival,
+        duration=duration,
         fares=_fares_for(scheduled.base_fares, pct),
     )

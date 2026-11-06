@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import StrEnum
 
 
@@ -16,4 +16,5 @@ class Flight:
     destination: str
     departure: datetime
     arrival: datetime
+    duration: timedelta
     fares: Mapping[Cabin, int]
