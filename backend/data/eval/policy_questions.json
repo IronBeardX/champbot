@@ -2,59 +2,98 @@
   "policy_questions": [
     {
       "question": "What is the cabin baggage weight limit in Economy class?",
-      "expected_doc": "checked-and-cabin-baggage"
+      "expected_doc": "checked-and-cabin-baggage",
+      "language": "en"
     },
     {
       "question": "How many kilograms of checked baggage can I bring in Business class on a domestic flight?",
-      "expected_doc": "checked-and-cabin-baggage"
+      "expected_doc": "checked-and-cabin-baggage",
+      "language": "en"
     },
     {
       "question": "How do I report damage to my baggage after a flight?",
-      "expected_doc": "baggage-faq"
+      "expected_doc": "baggage-faq",
+      "language": "en"
     },
     {
       "question": "Can I carry alcohol in my checked baggage on an international flight?",
-      "expected_doc": "baggage-faq"
+      "expected_doc": "baggage-faq",
+      "language": "en"
     },
     {
       "question": "How early can I check in online for my Air India flight?",
-      "expected_doc": "check-in"
+      "expected_doc": "check-in",
+      "language": "en"
     },
     {
       "question": "How many hours before departure should I arrive at the airport?",
-      "expected_doc": "check-in"
+      "expected_doc": "check-in",
+      "language": "en"
     },
     {
       "question": "How can I request a refund for my Air India booking?",
-      "expected_doc": "cancellation-and-refund"
+      "expected_doc": "cancellation-and-refund",
+      "language": "en"
     },
     {
       "question": "What payment methods does Air India accept?",
-      "expected_doc": "cancellation-and-refund"
+      "expected_doc": "cancellation-and-refund",
+      "language": "en"
     },
     {
       "question": "How do I request wheelchair assistance for my flight?",
-      "expected_doc": "special-assistance"
+      "expected_doc": "special-assistance",
+      "language": "en"
     },
     {
       "question": "Can I order a gluten-free meal on my flight?",
-      "expected_doc": "special-assistance"
+      "expected_doc": "special-assistance",
+      "language": "en"
     },
     {
       "question": "Until which week of pregnancy can I fly with Air India?",
-      "expected_doc": "infants-and-pregnancy"
+      "expected_doc": "infants-and-pregnancy",
+      "language": "en"
     },
     {
       "question": "What documents do I need to prove my infant's age when travelling?",
-      "expected_doc": "infants-and-pregnancy"
+      "expected_doc": "infants-and-pregnancy",
+      "language": "en"
     },
     {
       "question": "What should I do if my baggage does not arrive at my destination?",
-      "expected_doc": "delayed-and-lost-baggage"
+      "expected_doc": "delayed-and-lost-baggage",
+      "language": "en"
     },
     {
       "question": "After how many days is my baggage considered officially lost?",
-      "expected_doc": "delayed-and-lost-baggage"
+      "expected_doc": "delayed-and-lost-baggage",
+      "language": "en"
+    },
+    {
+      "question": "घरेलू उड़ान में इकॉनमी क्लास में कितने किलो चेक-इन बैगेज ले जा सकते हैं?",
+      "expected_doc": "checked-and-cabin-baggage",
+      "language": "hi"
+    },
+    {
+      "question": "एयर इंडिया की फ़्लाइट के लिए ऑनलाइन चेक-इन कब शुरू होता है?",
+      "expected_doc": "check-in",
+      "language": "hi"
+    },
+    {
+      "question": "मैं अपनी एयर इंडिया बुकिंग का रिफ़ंड कैसे ले सकता हूँ?",
+      "expected_doc": "cancellation-and-refund",
+      "language": "hi"
+    },
+    {
+      "question": "मुझे अपनी उड़ान के लिए व्हीलचेयर सहायता कैसे मिलेगी?",
+      "expected_doc": "special-assistance",
+      "language": "hi"
+    },
+    {
+      "question": "गर्भावस्था के कितने हफ़्ते तक मैं एयर इंडिया से उड़ान भर सकती हूँ?",
+      "expected_doc": "infants-and-pregnancy",
+      "language": "hi"
     }
   ],
   "off_topic_queries": [

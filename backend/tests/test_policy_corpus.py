@@ -74,14 +74,19 @@ def test_eval_seed_has_expected_shape_and_valid_doc_references() -> None:
     corpus = load_corpus()
     slugs = {doc.slug for doc in corpus.documents}
     seed = json.loads(EVAL_FILE.read_text())
+    by_language: dict[str, int] = {}
 
-    assert 10 <= len(seed["policy_questions"]) <= 15
     assert 3 <= len(seed["off_topic_queries"]) <= 7
     for entry in seed["policy_questions"]:
         assert entry["question"].strip()
         assert entry["expected_doc"] in slugs
+        assert entry["language"] in {"en", "hi"}
+        by_language[entry["language"]] = by_language.get(entry["language"], 0) + 1
     for query in seed["off_topic_queries"]:
         assert query.strip()
+
+    assert 10 <= by_language.get("en", 0) <= 15
+    assert 3 <= by_language.get("hi", 0) <= 7
 
 
 def test_eval_seed_covers_every_document() -> None:
