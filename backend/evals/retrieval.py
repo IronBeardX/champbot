@@ -1,7 +1,6 @@
 import argparse
 import asyncio
 import json
-import subprocess
 import sys
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
@@ -21,6 +20,7 @@ from champbot.common.core.domain.exceptions import ChampBotError
 from champbot.common.embeddings.domain.embedder import Embedder
 from champbot.common.embeddings.infrastructure.workers_ai import EMBEDDING_MODEL
 from champbot.common.vector_store.domain.store import Chunk, ScoredChunk, VectorStore
+from evals.git_info import REPO_ROOT, git_sha
 from evals.retrieval_metrics import (
     OffTopicResult,
     QuestionResult,
@@ -32,7 +32,6 @@ from evals.retrieval_metrics import (
 )
 from evals.retrieval_report import ReportHeader, render_report
 
-REPO_ROOT = Path(__file__).parents[2]
 DEFAULT_OUTPUT = REPO_ROOT / "docs" / "eval" / "retrieval.md"
 QUESTIONS_FILE = Path(__file__).parents[1] / "data" / "eval" / "policy_questions.json"
 
@@ -116,7 +115,7 @@ async def _run(
 
         header = ReportHeader(
             run_date_utc=datetime.now(UTC),
-            commit_sha=_git_sha(),
+            commit_sha=git_sha(),
             index_name=POLICY_INDEX_NAME,
             embedding_model=EMBEDDING_MODEL,
             embedder_adapter=type(ports.embedder).__name__,
@@ -157,27 +156,6 @@ def _load_questions(path: Path) -> tuple[list[_PolicyQuestion], list[str]]:
     except (KeyError, TypeError) as error:
         raise ValueError(f"{path}: unexpected shape ({error})") from error
     return policy_questions, off_topic_queries
-
-
-def _git_sha() -> str:
-    try:
-        sha = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=REPO_ROOT,
-        ).stdout.strip()
-        dirty = subprocess.run(
-            ["git", "status", "--porcelain"],
-            capture_output=True,
-            text=True,
-            check=True,
-            cwd=REPO_ROOT,
-        ).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return "unknown"
-    return f"{sha} (dirty)" if dirty else sha
 
 
 if __name__ == "__main__":
