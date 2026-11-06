@@ -1,0 +1,347 @@
+{
+  "cases": [
+    {
+      "id": "policy-cabin-economy-en",
+      "language": "en",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "What is the cabin baggage weight limit in Economy class?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/baggage-guidelines/cabin-baggage.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-alcohol-checked-en",
+      "language": "en",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "Can I carry alcohol in my checked baggage on an international flight?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/baggage.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-lost-baggage-days-en",
+      "language": "en",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "After how many days is my baggage considered officially lost?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/baggage-guidelines/lost-damaged-baggage.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-gluten-free-meal-en",
+      "language": "en",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "Can I order a gluten-free meal on my flight?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/health-and-medical-assistance.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-checked-economy-domestic-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "घरेलू उड़ान में इकॉनमी क्लास में कितने किलो चेक-इन बैगेज ले जा सकते हैं?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/baggage-guidelines/checked-baggage-allowance.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-online-checkin-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "एयर इंडिया की फ़्लाइट के लिए ऑनलाइन चेक-इन कब शुरू होता है?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/check-in.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-refund-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "मैं अपनी एयर इंडिया बुकिंग का रिफ़ंड कैसे ले सकता हूँ?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/payment-refund-cancellations.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-wheelchair-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "मुझे अपनी उड़ान के लिए व्हीलचेयर सहायता कैसे मिलेगी?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/health-and-medical-assistance.html"
+        }
+      ]
+    },
+    {
+      "id": "policy-pregnancy-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "गर्भावस्था के कितने हफ़्ते तक मैं एयर इंडिया से उड़ान भर सकती हूँ?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/first-time-flyers/expected-mothers-infants.html"
+        }
+      ]
+    },
+    {
+      "id": "offtopic-capital-en",
+      "language": "en",
+      "category": "off_topic",
+      "turns": [
+        {
+          "message": "What's the capital of Australia?",
+          "intent": "general",
+          "flights": false,
+          "off_topic": true
+        }
+      ]
+    },
+    {
+      "id": "offtopic-poem-en",
+      "language": "en",
+      "category": "off_topic",
+      "turns": [
+        {
+          "message": "Can you write a short poem about cats?",
+          "intent": "general",
+          "flights": false,
+          "off_topic": true
+        }
+      ]
+    },
+    {
+      "id": "offtopic-python-en",
+      "language": "en",
+      "category": "off_topic",
+      "turns": [
+        {
+          "message": "Why am I getting a Python ModuleNotFoundError?",
+          "intent": "general",
+          "flights": false,
+          "off_topic": true
+        }
+      ]
+    },
+    {
+      "id": "offtopic-pizza-en",
+      "language": "en",
+      "category": "off_topic",
+      "turns": [
+        {
+          "message": "Can you recommend a good pizza topping?",
+          "intent": "general",
+          "flights": false,
+          "off_topic": true
+        }
+      ]
+    },
+    {
+      "id": "general-greeting-en",
+      "language": "en",
+      "category": "general",
+      "turns": [
+        {
+          "message": "Hi there! What can you help me with?",
+          "intent": "general",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "general-greeting-hi",
+      "language": "hi",
+      "category": "general",
+      "turns": [
+        {
+          "message": "नमस्ते! आप मेरी किस तरह मदद कर सकते हैं?",
+          "intent": "general",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "flight-success-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "I want to fly from Delhi to Mumbai on {date+3}.",
+          "intent": "flight_search",
+          "flights": true
+        }
+      ]
+    },
+    {
+      "id": "flight-success-hi",
+      "language": "hi",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "मुझे {date+3} को दिल्ली से मुंबई की फ्लाइट चाहिए।",
+          "intent": "flight_search",
+          "flights": true
+        }
+      ]
+    },
+    {
+      "id": "flight-unsupported-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "Can I fly from Delhi to Paris?",
+          "intent": "flight_search",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "flight-same-airport-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "I want a flight from Mumbai to Mumbai on {date+2}.",
+          "intent": "flight_search",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "flight-past-date-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "I want to fly from Delhi to Bengaluru on {date-3}.",
+          "intent": "flight_search",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "flight-no-flights-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "I want to fly from Bengaluru to Singapore on {date+4}.",
+          "intent": "flight_search",
+          "flights": false
+        }
+      ]
+    },
+    {
+      "id": "multi-flight-slot-filling-en",
+      "language": "en",
+      "category": "flight_search",
+      "turns": [
+        {
+          "message": "I want to fly from Delhi to Dubai.",
+          "intent": "flight_search",
+          "flights": false
+        },
+        {
+          "message": "{date+5}",
+          "intent": "flight_search",
+          "flights": true
+        }
+      ]
+    },
+    {
+      "id": "multi-policy-followup-en",
+      "language": "en",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "What is the cabin baggage weight limit in Economy class?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/baggage-guidelines/cabin-baggage.html"
+        },
+        {
+          "message": "And for Business class?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/travel-information/baggage-guidelines/cabin-baggage.html"
+        }
+      ]
+    },
+    {
+      "id": "multi-checkin-followup-hi",
+      "language": "hi",
+      "category": "policy",
+      "turns": [
+        {
+          "message": "मुझे फ्लाइट के लिए एयरपोर्ट पर कितनी देर पहले पहुंचना चाहिए?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/check-in.html"
+        },
+        {
+          "message": "और ऑनलाइन चेक-इन के बारे में क्या?",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/check-in.html"
+        }
+      ]
+    },
+    {
+      "id": "multi-mixed-en",
+      "language": "en",
+      "category": "multi",
+      "turns": [
+        {
+          "message": "Hello!",
+          "intent": "general",
+          "flights": false
+        },
+        {
+          "message": "I need to report damage to my baggage from my last flight.",
+          "intent": "policy",
+          "flights": false,
+          "cited_url": "https://www.airindia.com/in/en/frequently-asked-questions/baggage.html"
+        },
+        {
+          "message": "Now show me flights from Mumbai to Delhi on {date+2}.",
+          "intent": "flight_search",
+          "flights": true
+        }
+      ]
+    }
+  ]
+}
