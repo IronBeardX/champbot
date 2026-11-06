@@ -1,6 +1,7 @@
 .env
 CLAUDE.md
 .claude/
+.vscode/
 docs/plans/
 
 .venv/
