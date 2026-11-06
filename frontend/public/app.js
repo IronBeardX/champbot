@@ -6,6 +6,7 @@ const messageField = document.querySelector("#message");
 const sendButton = document.querySelector("#send");
 const newConversationButton = document.querySelector("#new-conversation");
 const conversation = document.querySelector("#conversation");
+const suggestions = document.querySelector(".suggestions");
 
 let turns = [];
 
@@ -99,6 +100,15 @@ form.addEventListener("submit", async (event) => {
   } finally {
     setButtonsDisabled(false);
   }
+});
+
+suggestions.addEventListener("click", (event) => {
+  const chip = event.target.closest(".chip");
+  if (chip === null) {
+    return;
+  }
+  messageField.value = chip.textContent;
+  messageField.focus();
 });
 
 newConversationButton.addEventListener("click", () => {
