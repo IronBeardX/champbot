@@ -21,6 +21,10 @@ GREETING_EXCHANGE = (Message(Role.USER, "Hello"), Message(Role.ASSISTANT, "Hi, h
 
 SAMPLE_SCHEMA = {"type": "object", "properties": {"intent": {"type": "string"}}}
 
+TEST_GENERATE_CONTENT_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+)
+
 
 def generate(
     handler: Handler,
@@ -33,6 +37,7 @@ def generate(
     provider = GeminiProvider(
         "test-key",
         "test-model",
+        TEST_GENERATE_CONTENT_URL,
         transport=httpx.MockTransport(handler),
         thinking_level=thinking_level,
     )
@@ -352,7 +357,11 @@ def test_whole_request_is_bounded_by_the_timeout() -> None:
         return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "Hi"}]}}]})
 
     provider = GeminiProvider(
-        "test-key", "test-model", transport=httpx.MockTransport(slow_response), timeout_seconds=0.05
+        "test-key",
+        "test-model",
+        TEST_GENERATE_CONTENT_URL,
+        transport=httpx.MockTransport(slow_response),
+        timeout_seconds=0.05,
     )
 
     with pytest.raises(LLMTimeoutError):

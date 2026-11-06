@@ -14,9 +14,6 @@ from champbot.common.llm.domain.provider import (
     LLMUnavailableError,
 )
 
-_GENERATE_CONTENT_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-)
 _REQUEST_TIMEOUT_SECONDS = 25.0
 _MAX_RETRY_AFTER_SECONDS = 3600
 _RETRY_INFO_TYPE = "type.googleapis.com/google.rpc.RetryInfo"
@@ -30,12 +27,14 @@ class GeminiProvider:
         self,
         api_key: str,
         model: str,
+        generate_content_url: str,
         transport: httpx.AsyncBaseTransport | None = None,
         timeout_seconds: float = _REQUEST_TIMEOUT_SECONDS,
         thinking_level: str | None = None,
     ) -> None:
         self._api_key = api_key
         self._model = model
+        self._generate_content_url = generate_content_url
         self._transport = transport
         self._timeout_seconds = timeout_seconds
         self._thinking_level = thinking_level
@@ -70,7 +69,7 @@ class GeminiProvider:
                 ) as client,
             ):
                 return await client.post(
-                    _GENERATE_CONTENT_URL.format(model=self._model),
+                    self._generate_content_url.format(model=self._model),
                     headers={"x-goog-api-key": self._api_key},
                     json=body,
                 )

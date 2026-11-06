@@ -137,8 +137,10 @@ def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def configure_settings_without(monkeypatch: pytest.MonkeyPatch, missing_name: str) -> None:
+    monkeypatch.setenv("LLM_PROVIDER", "gemini")
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
     monkeypatch.setenv("GEMINI_MODEL", "test-model")
+    monkeypatch.setenv("GEMINI_GENERATE_CONTENT_URL", "https://gemini.test/generate")
     monkeypatch.setenv("CLOUDFLARE_ACCOUNT_ID", "test-account")
     monkeypatch.setenv("CF_RUNTIME_API_TOKEN", "test-token")
     monkeypatch.setenv("RETRIEVAL_MIN_SCORE", "0.5")
@@ -525,8 +527,10 @@ def test_provider_error_cause_is_logged(caplog: pytest.LogCaptureFixture, error:
 
 
 MISSING_SETTING_NAMES = [
+    "LLM_PROVIDER",
     "GEMINI_API_KEY",
     "GEMINI_MODEL",
+    "GEMINI_GENERATE_CONTENT_URL",
     "CLOUDFLARE_ACCOUNT_ID",
     "CF_RUNTIME_API_TOKEN",
     "RETRIEVAL_MIN_SCORE",
@@ -637,7 +641,12 @@ def respond_with_status(code: int, status: str) -> Callable[[httpx.Request], htt
 def test_gemini_failures_never_log_the_api_key(
     caplog: pytest.LogCaptureFixture, handler: Callable[[httpx.Request], httpx.Response]
 ) -> None:
-    provider = GeminiProvider("test-key", "test-model", transport=httpx.MockTransport(handler))
+    provider = GeminiProvider(
+        "test-key",
+        "test-model",
+        "https://gemini.test/generate",
+        transport=httpx.MockTransport(handler),
+    )
     app = create_app()
     app.dependency_overrides[get_llm_provider] = lambda: provider
     app.dependency_overrides[get_retrieval_ports] = lambda: RetrievalPorts(
