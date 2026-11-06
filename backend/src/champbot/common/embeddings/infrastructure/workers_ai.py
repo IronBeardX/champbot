@@ -9,7 +9,7 @@ from champbot.common.core.infrastructure.cloudflare import (
 )
 from champbot.common.embeddings.domain.embedder import EmbeddingError, EmbeddingTimeoutError
 
-_MODEL = "@cf/baai/bge-m3"
+EMBEDDING_MODEL = "@cf/baai/bge-m3"
 _MAX_TEXTS_PER_REQUEST = 50
 _REQUEST_TIMEOUT_SECONDS = 60.0
 
@@ -43,7 +43,7 @@ class WorkersAIEmbedder:
         return _extract_vectors(response, len(batch))
 
     async def _post_run(self, batch: list[str]) -> httpx.Response:
-        url = f"{CLOUDFLARE_API_BASE}/accounts/{self._account_id}/ai/run/{_MODEL}"
+        url = f"{CLOUDFLARE_API_BASE}/accounts/{self._account_id}/ai/run/{EMBEDDING_MODEL}"
         try:
             async with asyncio.timeout(self._timeout_seconds):
                 return await self._client.post(

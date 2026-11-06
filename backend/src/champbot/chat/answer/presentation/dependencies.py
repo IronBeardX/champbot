@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
@@ -22,7 +23,7 @@ from champbot.common.vector_store.domain.store import VectorStore
 from champbot.common.vector_store.infrastructure.vectorize import VectorizeStore
 
 _RUNTIME_TOKEN_SETTING = "CF_RUNTIME_API_TOKEN"
-_POLICY_INDEX_NAME = "champbot-policies"
+POLICY_INDEX_NAME = "champbot-policies"
 _RETRIEVAL_TIMEOUT_SECONDS = 10.0
 
 
@@ -53,9 +54,10 @@ def get_llm_provider(request: Request) -> LLMProvider:
             )
 
 
-async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts]:
-    settings = load_cloudflare_settings(_RUNTIME_TOKEN_SETTING, request.scope.get("env"))
-    # TEMP(IRO-164): one httpx client per request, shared by both adapters.
+@asynccontextmanager
+async def open_retrieval_ports(workers_env: object | None = None) -> AsyncGenerator[RetrievalPorts]:
+    settings = load_cloudflare_settings(_RUNTIME_TOKEN_SETTING, workers_env)
+    # TEMP(IRO-164): one httpx client per use, shared by both adapters.
     # IRO-164 replaces this with a client reused across requests (decision 20).
     async with open_http_client() as client:
         yield RetrievalPorts(
@@ -69,10 +71,15 @@ async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts
                 client,
                 settings.account_id,
                 settings.api_token,
-                _POLICY_INDEX_NAME,
+                POLICY_INDEX_NAME,
                 timeout_seconds=_RETRIEVAL_TIMEOUT_SECONDS,
             ),
         )
+
+
+async def get_retrieval_ports(request: Request) -> AsyncGenerator[RetrievalPorts]:
+    async with open_retrieval_ports(request.scope.get("env")) as ports:
+        yield ports
 
 
 def get_min_score(request: Request) -> float:
