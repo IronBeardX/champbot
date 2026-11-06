@@ -1,3 +1,5 @@
+import { readFlights, readFlightsNote } from "./flights.js";
+
 export const NETWORK_ERROR_MESSAGE =
   "Could not reach the server. Check your connection and try again.";
 
@@ -63,6 +65,8 @@ async function readAnswer(response) {
       answer: body.answer,
       intent: readIntent(body.intent),
       sources: readSources(body.sources),
+      flights: readFlights(body.flights),
+      flightsNote: readFlightsNote(body.flights_note),
     };
   }
   return { error: UNEXPECTED_RESPONSE_MESSAGE };

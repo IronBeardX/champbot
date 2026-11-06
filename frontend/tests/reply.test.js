@@ -10,10 +10,16 @@ function jsonResponse(status, body, headers) {
   });
 }
 
-test("200 with only an answer defaults intent to null and sources to empty", async () => {
+test("200 with only an answer defaults intent to null, sources/flights to empty and flightsNote to null", async () => {
   const reply = await readReply(jsonResponse(200, { answer: "Yes, you can." }));
 
-  assert.deepEqual(reply, { answer: "Yes, you can.", intent: null, sources: [] });
+  assert.deepEqual(reply, {
+    answer: "Yes, you can.",
+    intent: null,
+    sources: [],
+    flights: [],
+    flightsNote: null,
+  });
 });
 
 test("200 with extra fields ignores them and keeps the rest", async () => {
@@ -21,7 +27,13 @@ test("200 with extra fields ignores them and keeps the rest", async () => {
     jsonResponse(200, { answer: "Yes, you can.", conversation_id: "abc-123" }),
   );
 
-  assert.deepEqual(reply, { answer: "Yes, you can.", intent: null, sources: [] });
+  assert.deepEqual(reply, {
+    answer: "Yes, you can.",
+    intent: null,
+    sources: [],
+    flights: [],
+    flightsNote: null,
+  });
 });
 
 test("200 with a full policy body returns answer, intent and sources", async () => {
@@ -37,7 +49,39 @@ test("200 with a full policy body returns answer, intent and sources", async () 
     answer: "20kg in economy.",
     intent: "policy",
     sources: [{ title: "Baggage policy", href: "https://example.com/baggage" }],
+    flights: [],
+    flightsNote: null,
   });
+});
+
+test("200 with a full flight_search body returns flights and flightsNote", async () => {
+  const reply = await readReply(
+    jsonResponse(200, {
+      answer: "Flights from Delhi to London on Friday 6 November 2026:",
+      intent: "flight_search",
+      sources: [],
+      flights: [
+        {
+          flight_number: "AI 111",
+          origin: "DEL",
+          destination: "LHR",
+          departure: "2026-11-06T13:30:00",
+          arrival: "2026-11-06T18:20:00",
+          duration_minutes: 620,
+          fares: { economy: 48000, business: 180000 },
+          currency: "INR",
+        },
+      ],
+      flights_note: "This is a sample schedule for this demo, not live fares or availability.",
+    }),
+  );
+
+  assert.equal(reply.flights.length, 1);
+  assert.equal(reply.flights[0].flightNumber, "AI 111");
+  assert.equal(
+    reply.flightsNote,
+    "This is a sample schedule for this demo, not live fares or availability.",
+  );
 });
 
 test("200 without an answer field is an unexpected response", async () => {
