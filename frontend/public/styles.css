@@ -159,6 +159,13 @@ button:disabled {
   }
 }
 
+.turn .hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
 .turn.error {
   background: var(--color-error-bg);
   border-color: var(--color-error-bg);

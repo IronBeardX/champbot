@@ -8,6 +8,9 @@ const newConversationButton = document.querySelector("#new-conversation");
 const conversation = document.querySelector("#conversation");
 const suggestions = document.querySelector(".suggestions");
 
+const HINT_DELAY_MS = 5000;
+const HINT_TEXT = "Still working, answers can take up to 20 seconds.";
+
 let turns = [];
 
 function addTurn(className, text) {
@@ -76,6 +79,12 @@ form.addEventListener("submit", async (event) => {
   setButtonsDisabled(true);
   const userTurn = addTurn("user", message);
   const pending = addTurn("assistant pending", "Thinking…");
+  const hintTimer = setTimeout(() => {
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    hint.textContent = HINT_TEXT;
+    pending.append(hint);
+  }, HINT_DELAY_MS);
 
   try {
     const response = await fetch("/chat", {
@@ -98,6 +107,7 @@ form.addEventListener("submit", async (event) => {
     pending.className = "turn assistant error";
     userTurn.classList.add("failed");
   } finally {
+    clearTimeout(hintTimer);
     setButtonsDisabled(false);
   }
 });
