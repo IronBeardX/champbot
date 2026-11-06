@@ -167,3 +167,22 @@ uv run --env-file ../.env champbot-ingest
 ```
 
 Vectorize applies the upsert asynchronously, so the vector count in the Cloudflare dashboard may take a minute to catch up. Chunk ids are stable (`<slug>-<n>`), so re-running the command overwrites the same vectors instead of duplicating them.
+
+## Evaluation
+
+Two local CLIs in `backend/evals/`, outside the `champbot` package and never shipped with the Worker, measure the app from the outside and write their findings as generated snapshots in `docs/eval/`. Their own metric and check functions are unit-tested in CI; running either CLI against a live index or URL is not, and neither spends LLM quota unless told to.
+
+```sh
+cd backend
+uv run python -m evals.retrieval
+```
+
+Measures retrieval quality (hit@1, hit@5, MRR) against the real Vectorize index for the questions in `backend/data/eval/policy_questions.json`, in English and Hindi, plus whether off-topic queries are kept out. Needs `CLOUDFLARE_ACCOUNT_ID` and `CF_RUNTIME_API_TOKEN` in `.env`. Spends Workers AI/Vectorize calls, never Gemini. Writes `docs/eval/retrieval.md`.
+
+```sh
+cd backend
+uv run python -m evals.conversations --dry-run
+uv run python -m evals.conversations --model "gemini-3-flash"
+```
+
+Drives the deployed `/chat` over plain HTTP through the ~25 scripted English/Hindi conversations in `backend/data/eval/conversations.json`, checking intent, cited source, flight presence and answer language with no LLM judge. Reads no `.env`; `--base-url` defaults to production. Requests are paced at least 6s apart and bounded on 429/503, so a full run takes roughly 6–12 minutes and spends about 30 `/chat` calls' worth of Gemini quota. `--dry-run` renders and validates every request with no HTTP client at all, so it is always safe to run. `--case ID` or `--limit N` run a subset without touching the committed `docs/eval/conversations.md` unless `--output` is also given. See decision 29 for the pacing, retry and check details.
