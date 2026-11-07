@@ -96,12 +96,14 @@ The jobs only use the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` reposit
 
 ```sh
 cd backend
-uv run pywrangler secret put GEMINI_API_KEY
+uv run pywrangler secret put GROQ_API_KEY
 uv run pywrangler secret put CF_RUNTIME_API_TOKEN
 uv run pywrangler secret put CLOUDFLARE_ACCOUNT_ID
 ```
 
-The model id, the thinking level and the retrieval score threshold are plain variables (`GEMINI_MODEL`, `GEMINI_THINKING_LEVEL`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code. The frontend Worker has no secrets or variables of its own.
+`GEMINI_API_KEY` stays set too, so switching `LLM_PROVIDER` back to `gemini` needs no secret change.
+
+Which provider answers `/chat`, its model id, the thinking/reasoning effort and the retrieval score threshold are plain variables (`LLM_PROVIDER`, `GEMINI_MODEL`, `GROQ_MODEL`, `GEMINI_THINKING_LEVEL`, `GROQ_REASONING_EFFORT`, `RETRIEVAL_MIN_SCORE`) in `backend/wrangler.jsonc`, deployed with the code. The frontend Worker has no secrets or variables of its own.
 
 To deploy by hand, log in to Cloudflare once with `wrangler login`, then:
 

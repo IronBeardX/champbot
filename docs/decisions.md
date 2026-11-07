@@ -502,3 +502,15 @@ Every meaningful technical decision, newest last. Each entry records the context
   - A PR's correctness is judged from CI checks (lint, types, tests) and manual code review alone, never from a live deployment of that branch. A regression that only shows up at runtime (Worker-specific behavior, Pyodide quirks, actual Cloudflare config) is caught after merge, on production, not before.
   - The README's "Preview deployments" section is deleted rather than updated.
   - If previews are wanted again later, this is a fresh design, not a revival of the old `iro-<n>` scheme.
+
+## 32. Groq as the production LLM provider
+
+- **Context**: production `/chat` was found to have been returning 500 on every request since decision 25 (a separate config bug, fixed just before this decision). While restoring it, the owner also wants a provider with more headroom for a live demo that gets probed repeatedly by an evaluator: Gemini's free tier caps at 20 requests/day (decision 23), which a single grading session alone can exhaust.
+- **Decision**: set `LLM_PROVIDER=groq` in `backend/wrangler.jsonc`, with `GROQ_MODEL=openai/gpt-oss-120b`, `GROQ_GENERATE_CONTENT_URL` and `GROQ_REASONING_EFFORT=LOW` alongside it. The Gemini vars and its Worker secret stay in place, untouched, so switching back is a one-line `LLM_PROVIDER` edit with no secret to re-provision.
+- **Alternatives**:
+  - Stay on Gemini and accept the 20 req/day ceiling: rejected — a grading session alone can exhaust it, and decision 28's fallback model only helps against transient failures, not quota exhaustion.
+  - Remove the Gemini vars/secret now that Groq is primary: rejected, it would cost a secret round-trip to switch back if Groq's own free-tier limits (12K tokens/minute, decision 25's open risk) turn out to bind under real RAG prompt sizes.
+- **Consequences**:
+  - Decision 25's open risk — Groq's 12K TPM under RAG-sized prompts was never verified live — is now a live production concern instead of a hypothetical one; watch for 429s from Groq itself under load, not just Cloudflare/Gemini failures.
+  - The README's "backend Worker needs three secrets" step now names `GROQ_API_KEY` instead of `GEMINI_API_KEY`.
+  - `evals/conversations.py`'s `--model` flag must be passed the model that's actually live (`openai/gpt-oss-120b`, not a Gemini id) for the report header to be accurate; the CLI itself has no way to ask production which provider answered.
