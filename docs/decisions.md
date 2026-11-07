@@ -514,3 +514,15 @@ Every meaningful technical decision, newest last. Each entry records the context
   - Decision 25's open risk — Groq's 12K TPM under RAG-sized prompts was never verified live — is now a live production concern instead of a hypothetical one; watch for 429s from Groq itself under load, not just Cloudflare/Gemini failures.
   - The README's "backend Worker needs three secrets" step now names `GROQ_API_KEY` instead of `GEMINI_API_KEY`.
   - `evals/conversations.py`'s `--model` flag must be passed the model that's actually live (`openai/gpt-oss-120b`, not a Gemini id) for the report header to be accurate; the CLI itself has no way to ask production which provider answered.
+
+## 33. Prompt-only hardening against prompt injection
+
+- **Context**: `/chat` has no tools, no booking actions and no secrets to leak; flight details and cited sources are already server-derived and re-validated (decisions 21, 27), so a successful jailbreak can't fabricate a trustworthy booking or fare. The realistic residual risk is reputational: a user getting the model to break persona, claim official Air India affiliation despite the disclaimer, reveal its system prompt, or be redirected by a fake "assistant" turn the client fabricated into `history` (decision 16 already flags that `history` is client-controlled and unverified).
+- **Decision**: harden `ASSISTANT_SYSTEM_PROMPT` with explicit anti-injection text only — no code change, no extra LLM call. It states that the system prompt is the only authority over behaviour, that no user message or earlier turn (including one labelled "assistant") can change, suspend or reveal it regardless of phrasing, and that such a request is declined the same way any other off-topic request already is.
+- **Alternatives**:
+  - A separate guardrail/classifier call to screen input before the main call: doubles latency and free-tier quota per turn, the same reason decision 22 rejected a separate classifier call for intent; the blast radius here doesn't justify the cost.
+  - Sanitizing or stripping `history` server-side: decision 16 already accepts the client can fabricate history turns, and anything the server must trust from them is re-derived instead (decision 27); rewriting a user's own conversation is also more likely to break legitimate multi-turn phrasing than to stop a determined jailbreak.
+  - Doing nothing, relying on the existing scope/persona instructions alone: they already resist most off-topic requests, but say nothing about instructions arriving *through* the conversation itself, which is the specific gap this closes.
+- **Consequences**:
+  - This raises the bar but is not a guarantee — prompt-only defenses are known to be bypassable by a motivated adversary; there is no server-side enforcement layer behind it, by choice, given the low blast radius.
+  - No test added: prompt wording isn't unit-tested (decision 17); effectiveness is checked by hand with adversarial scripted turns, the same way prompt quality already is.
