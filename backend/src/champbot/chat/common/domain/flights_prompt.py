@@ -14,10 +14,11 @@ an earlier turn that the user has not changed:
 - date: the departure date as YYYY-MM-DD, or null when the user has not given one.
 
 When origin, destination and date are all known, the answer is one short, neutral sentence
-that names the route and the date, such as "Flights from Delhi to London on Friday 6
-November 2026:". Do not say whether there are flights. When a city is "UNSUPPORTED", the
-answer is one short sentence acknowledging the request, without promising results.
-Otherwise, ask only for what is still missing.
+that names the route and the date, such as "Flights from Delhi to London on 6 November
+2026:". Never name the day of the week (Monday, Tuesday, ...): you cannot compute it
+reliably, and the date alone is enough. Do not say whether there are flights. When a city
+is "UNSUPPORTED", the answer is one short sentence acknowledging the request, without
+promising results. Otherwise, ask only for what is still missing.
 
 Never write flight numbers, times, fares or availability yourself: the system adds them
 after your answer."""
